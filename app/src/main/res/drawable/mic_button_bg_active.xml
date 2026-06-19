@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Active recording mic button: Fieldwork secondary (mint green) -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="#205331" /><!-- secondary_container pressed -->
+            <size android:width="58dp" android:height="58dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#9DD3A8" /><!-- secondary -->
+            <size android:width="58dp" android:height="58dp" />
+        </shape>
+    </item>
+</selector>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenFree</string>
+    <string name="keyboard_name">OpenFree Voice Input</string>
+
+    <!-- Keyboard UI -->
+    <string name="status_idle">Tap mic to dictate</string>
+    <string name="status_listening">Listening…</string>
+    <string name="status_processing">Transcribing…</string>
+    <string name="status_error">Error — tap to retry</string>
+    <string name="preview_hint">Transcription will appear here</string>
+    <string name="mic_button_description">Start voice dictation</string>
+    <string name="stop_button_description">Stop recording</string>
+    <string name="settings_button_description">Open settings</string>
+
+    <!-- Settings Activity -->
+    <string name="settings_title">Settings</string>
+    <string name="model_path_label">Local Model Path</string>
+    <string name="model_path_hint">/data/data/…/cache/ggml-base.en-q5_1.bin</string>
+    <string name="fallback_url_label">Remote Fallback URL (optional)</string>
+    <string name="fallback_url_hint">http://100.x.x.x:8080/transcribe</string>
+    <string name="download_model_button">Download Base EN Model (~60 MB)</string>
+    <string name="save_button">Save Settings</string>
+    <string name="download_progress">Downloading model…</string>
+    <string name="download_success">Model downloaded successfully</string>
+    <string name="download_failed">Download failed</string>
+    <string name="settings_saved">Settings saved</string>
+    <string name="section_model">Voice Model</string>
+    <string name="section_network">Network</string>
+    <string name="section_about">About</string>
+    <string name="about_version">OpenFree v1.0 — Offline Voice Dictation</string>
+</resources>

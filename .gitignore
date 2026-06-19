@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Android Studio / IDEs
+.idea/
+*.iml
+local.properties
+
+# System / OS
+.DS_Store
+Thumbs.db
+
+# Native / C++
+.cxx/
+app/.cxx/
+
+# Teamwork Agents
+.agents/
+
+# Python
+__pycache__/
+*.pyc
+
+# Log files
+*.log

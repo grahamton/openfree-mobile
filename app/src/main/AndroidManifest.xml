@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.openfree.client">
+
+    <!-- Permissions for local voice dictation and home lab remote fallback -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:label="OpenFree Voice Keyboard"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OpenFree">
+
+        <!-- App Settings & Downloader UI -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
+            android:label="OpenFree Settings">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Custom Input Method Editor Service (IME) -->
+        <service
+            android:name=".OpenFreeIME"
+            android:label="OpenFree Voice Input"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:theme="@style/Theme.OpenFree"
+            android:exported="true">
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>
