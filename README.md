@@ -8,9 +8,11 @@ OpenFree is an **offline-first, local voice-dictation keyboard (IME)** for Andro
 
 - **Local & Private:** Voice dictation runs entirely on-device; no audio samples or text are sent to the cloud.
 - **High-Speed Inference:** Whisper core compiled with full `-O3` vectorizations, bypassing OpenMP overhead for sub-1.5s latency on modern CPUs.
-- **Refined Material Design:** Styled using the dark "Fieldwork" palette with a multi-line, scrollable transcription preview panel.
+- **Adaptive Material 3 Design:** Styled using a clean Material 3 Day/Night theme that automatically adapts to system light and dark modes.
+- **Embedded QWERTY Typing Mode:** Includes a compact, built-in QWERTY typing layout to make inline text corrections and edits directly inside the IME.
+- **Quick Dictionary Corrections:** A local text-replacement dictionary (e.g. `anti gravity` -> `Antigravity`) to automatically fix recurring voice dictation typos.
 - **Hugging Face Downloader:** Integrated downloader UI inside app settings to pull the optimized `ggml-base.en-q5_1.bin` model directly from Hugging Face.
-- **Optional Remote Fallback:** Supports routing transcription queries to a custom home lab transcription server if local resources are offline.
+- **Optional Remote Fallback:** Supports routing transcription queries to a custom home lab transcription server (Tailscale/LAN) with Android 17 `ACCESS_LOCAL_NETWORK` permission support.
 
 ---
 
@@ -30,6 +32,9 @@ WhisperEngine (Kotlin JNI Wrapper)
    │
    ▼
 whisper-jni.cpp (C++ bridge) -> whisper.cpp
+   │
+   ▼
+Apply Local Corrections Dictionary (Custom Mappings)
    │
    ▼
 OpenFreeIME (InputMethodService) -> commitText -> Active Input Connection

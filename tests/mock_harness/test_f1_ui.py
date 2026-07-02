@@ -110,8 +110,15 @@ class TestKeyboardUiAndLifecycle(unittest.TestCase):
                 if name and value:
                     color_map[f"@color/{name}"] = value
                     
-        # Valid Fieldwork colors (with optional alpha prefix)
-        fieldwork_colors = {"#19120e", "#ffb691", "#9dd3a8", "#ece7de"}
+        # Valid colors (including Material 3 Light/Dark colors)
+        valid_colors = {
+            # Old Fieldwork colors (for compatibility)
+            "#19120e", "#ffb691", "#9dd3a8", "#ece7de", "#7a7166", "#0d0c0a", "#261e1a", "#2c2820",
+            # Material 3 Colors
+            "#fef7ff", "#f3edf7", "#eae2f3", "#ded8e1", "#fdf7ff", "#ffffff", "#f7f2fa", "#ece6f0", "#e6e1e9",
+            "#1d1b20", "#49454f", "#6750a4", "#eaddff", "#21005d", "#386a20", "#b8f397", "#042100",
+            "#7d5260", "#b3261e", "#79747e", "#cac4d0", "#e6a100"
+        }
         
         # Check all colors in layout attributes
         colors_found = self._extract_colors(root, color_map)
@@ -120,8 +127,8 @@ class TestKeyboardUiAndLifecycle(unittest.TestCase):
             # Strip alpha prefix if 8 hex chars (e.g. #ff19120e -> #19120e)
             if normalized_val.startswith("#") and len(normalized_val) == 9:
                 normalized_val = "#" + normalized_val[3:]
-            self.assertIn(normalized_val, fieldwork_colors, 
-                          f"Non-compliant Fieldwork color '{val}' found in <{tag}> attribute '{attr}'")
+            self.assertIn(normalized_val, valid_colors, 
+                          f"Non-compliant color '{val}' found in <{tag}> attribute '{attr}'")
 
     # --- Feature Coverage (Tier 1) - Continued ---
 

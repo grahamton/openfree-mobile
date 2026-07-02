@@ -15,6 +15,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -27,6 +29,7 @@ import java.net.URL
  * Configuration UI for OpenFree. Allows users to:
  *  - Set the local path to a GGML Whisper model (or download one).
  *  - Configure an optional remote fallback transcription endpoint.
+ *  - View and clear corrections dictionary mappings.
  *
  * Preferences are persisted in the "openfree_prefs" [SharedPreferences] file
  * and read by [OpenFreeIME] on each keyboard activation.
@@ -41,6 +44,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnSave: Button
     private lateinit var progressBar: ProgressBar
     private lateinit var txtDownloadStatus: TextView
+    private lateinit var txtDictionaryList: TextView
+    private lateinit var btnClearDictionary: Button
 
     // ── State ──────────────────────────────────────────────────────────────────
 
@@ -48,13 +53,21 @@ class SettingsActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var downloadThread: Thread? = null
 
-    private val RECORD_AUDIO_REQUEST_CODE = 101
+    private val PERMISSIONS_REQUEST_CODE = 101
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+
+        // Apply Window Insets for modern Edge-to-Edge compliance
+        val rootView = findViewById<View>(android.R.id.content)
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
 
         prefs = getSharedPreferences(OpenFreeIME.PREFS_NAME, MODE_PRIVATE)
 
@@ -64,6 +77,8 @@ class SettingsActivity : AppCompatActivity() {
         btnSave            = findViewById(R.id.btn_save)
         progressBar        = findViewById(R.id.progress_download)
         txtDownloadStatus  = findViewById(R.id.txt_download_status)
+        txtDictionaryList  = findViewById(R.id.txt_dictionary_list)
+        btnClearDictionary = findViewById(R.id.btn_clear_dictionary)
 
         // Restore saved preferences
         editModelPath.setText(prefs.getString(OpenFreeIME.KEY_MODEL_PATH, ""))
@@ -71,16 +86,32 @@ class SettingsActivity : AppCompatActivity() {
 
         btnSave.setOnClickListener { saveSettings() }
         btnDownload.setOnClickListener { downloadModel() }
+        btnClearDictionary.setOnClickListener { clearDictionary() }
 
+        updateDictionaryDisplay()
         checkAndRequestPermissions()
     }
 
     private fun checkAndRequestPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
+        }
+
+        // ACCESS_LOCAL_NETWORK is a string literal to compile on older target SDKs, but runs on Android 17 (API 37)+
+        val localNetworkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
+        if (android.os.Build.VERSION.SDK_INT >= 37) {
+            if (ContextCompat.checkSelfPermission(this, localNetworkPermission) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(localNetworkPermission)
+            }
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                RECORD_AUDIO_REQUEST_CODE
+                permissionsToRequest.toTypedArray(),
+                PERMISSIONS_REQUEST_CODE
             )
         }
     }
@@ -103,6 +134,28 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         Toast.makeText(this, getString(R.string.settings_saved), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearDictionary() {
+        prefs.edit().remove(OpenFreeIME.KEY_DICTIONARY_MAPPINGS).apply()
+        updateDictionaryDisplay()
+        Toast.makeText(this, "Corrections dictionary cleared", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateDictionaryDisplay() {
+        val raw = prefs.getString(OpenFreeIME.KEY_DICTIONARY_MAPPINGS, "") ?: ""
+        if (raw.isBlank()) {
+            txtDictionaryList.text = "No active dictionary corrections."
+            return
+        }
+        val sb = java.lang.StringBuilder()
+        raw.split(";").forEach {
+            val parts = it.split("->")
+            if (parts.size == 2) {
+                sb.append("${parts[0]} → ${parts[1]}\n")
+            }
+        }
+        txtDictionaryList.text = sb.toString().trim()
     }
 
     // ── Model downloader ───────────────────────────────────────────────────────

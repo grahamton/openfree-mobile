@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Idle mic button: warm orange circle (Fieldwork primary) -->
+<!-- Idle mic button: Material 3 Primary circle -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="oval">
-            <solid android:color="#D27A4A" /><!-- primary_container pressed state -->
+            <solid android:color="#EADDFF" /><!-- primary_container pressed state -->
             <size android:width="58dp" android:height="58dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="oval">
-            <solid android:color="#FFB691" /><!-- primary -->
+            <solid android:color="#6750A4" /><!-- primary -->
             <size android:width="58dp" android:height="58dp" />
         </shape>
     </item>

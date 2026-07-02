@@ -2,7 +2,7 @@
 <!-- Text input field background for settings activity -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#261E1A" /><!-- surface_container -->
-    <corners android:radius="6dp" />
-    <stroke android:width="1dp" android:color="#2C2820" /><!-- border_primary -->
+    <solid android:color="@color/surface_container" />
+    <corners android:radius="8dp" />
+    <stroke android:width="1dp" android:color="@color/border_primary" />
 </shape>

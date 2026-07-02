@@ -79,17 +79,17 @@ class TestF1KeyboardUIAndLifecycle(unittest.TestCase):
 # ===========================================================================
 
 class TestF1FieldworkColors(unittest.TestCase):
-    """Verify keyboard panel and colors.xml use Fieldwork palette."""
+    """Verify keyboard panel and colors.xml use modern standard palette."""
 
-    FIELDWORK_COLORS = {
-        "bg_primary":      "#0D0C0A",
-        "primary":         "#FFB691",
-        "on_primary":      "#552000",
-        "secondary":       "#9DD3A8",
-        "text_primary":    "#ECE7DE",
-        "text_secondary":  "#7A7166",
-        "border_primary":  "#2C2820",
-        "surface_container": "#261E1A",
+    MODERN_COLORS = {
+        "bg_primary":      "#FEF7FF",
+        "primary":         "#6750A4",
+        "on_primary":      "#FFFFFF",
+        "secondary":       "#386A20",
+        "text_primary":    "#1D1B20",
+        "text_secondary":  "#49454F",
+        "border_primary":  "#CAC4D0",
+        "surface_container": "#F3EDF7",
     }
 
     def test_colors_xml_exists(self):
@@ -99,20 +99,20 @@ class TestF1FieldworkColors(unittest.TestCase):
         return read(repo("app/src/main/res/values/colors.xml")).upper()
 
     def test_color_bg_primary(self):
-        self.assertIn("0D0C0A", self._colors_content())
+        self.assertIn("FEF7FF", self._colors_content())
 
     def test_color_primary(self):
-        self.assertIn("FFB691", self._colors_content())
+        self.assertIn("6750A4", self._colors_content())
 
     def test_color_secondary(self):
-        self.assertIn("9DD3A8", self._colors_content())
+        self.assertIn("386A20", self._colors_content())
 
     def test_color_text_primary(self):
-        self.assertIn("ECE7DE", self._colors_content())
+        self.assertIn("1D1B20", self._colors_content())
 
     def test_keyboard_view_references_surface_color(self):
         content = read(repo("app/src/main/res/layout/keyboard_view.xml"))
-        # Keyboard panel uses @color/surface (#19120e) as its background per Fieldwork spec
+        # Keyboard panel uses @color/surface as its background
         self.assertIn("surface", content)
 
     def test_keyboard_view_references_preview_bg(self):
@@ -125,11 +125,11 @@ class TestF1FieldworkColors(unittest.TestCase):
 
     def test_mic_button_bg_uses_primary_color(self):
         content = read(repo("app/src/main/res/drawable/mic_button_bg.xml")).upper()
-        self.assertIn("FFB691", content)
+        self.assertIn("6750A4", content)
 
     def test_mic_button_bg_active_uses_secondary_color(self):
         content = read(repo("app/src/main/res/drawable/mic_button_bg_active.xml")).upper()
-        self.assertIn("9DD3A8", content)
+        self.assertIn("386A20", content)
 
 
 # ===========================================================================

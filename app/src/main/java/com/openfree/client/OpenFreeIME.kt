@@ -8,10 +8,14 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import java.util.regex.Pattern
 
 /**
  * OpenFreeIME
@@ -42,11 +46,15 @@ class OpenFreeIME : InputMethodService() {
     private var btnSettings: ImageButton? = null
     private var txtStatus: TextView? = null
     private var txtPreview: TextView? = null
+    private var pulseRing: View? = null
 
     // ── State ──────────────────────────────────────────────────────────────────
 
     private var isRecording = false
     private var isTranscribing = false
+    private var isShifted = false
+    private var keyboardView: View? = null
+    private var pulseAnimator: android.animation.AnimatorSet? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -61,14 +69,117 @@ class OpenFreeIME : InputMethodService() {
     override fun onCreateInputView(): View {
         val themedContext = android.view.ContextThemeWrapper(this, R.style.Theme_OpenFree)
         val view = android.view.LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null)
+        keyboardView = view
 
         btnMic      = view.findViewById(R.id.btn_mic)
         btnSettings = view.findViewById(R.id.btn_settings)
         txtStatus   = view.findViewById(R.id.txt_status)
         txtPreview  = view.findViewById(R.id.txt_preview)
+        pulseRing   = view.findViewById(R.id.mic_pulse_ring)
 
         btnMic?.setOnClickListener { toggleRecording() }
         btnSettings?.setOnClickListener { openSettings() }
+
+        // Setup layouts & tabs
+        val layoutVoice = view.findViewById<View>(R.id.layout_voice)
+        val layoutQwerty = view.findViewById<View>(R.id.layout_qwerty)
+        val layoutDict = view.findViewById<View>(R.id.layout_dictionary)
+
+        val btnTabVoice = view.findViewById<ImageButton>(R.id.btn_tab_voice)
+        val btnTabType = view.findViewById<ImageButton>(R.id.btn_tab_type)
+        val btnTabDict = view.findViewById<ImageButton>(R.id.btn_tab_dict)
+        val btnTabSwitch = view.findViewById<ImageButton>(R.id.btn_tab_switch)
+
+        val btnClearPreview = view.findViewById<ImageButton>(R.id.btn_clear_preview)
+
+        btnClearPreview?.setOnClickListener {
+            txtPreview?.text = ""
+        }
+
+        // Tab selection coloring helper
+        fun updateTabColors(selected: ImageButton, unselected: List<ImageButton>) {
+            selected.setColorFilter(
+                ContextCompat.getColor(this, R.color.primary),
+                PorterDuff.Mode.SRC_IN
+            )
+            for (btn in unselected) {
+                btn.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_secondary),
+                    PorterDuff.Mode.SRC_IN
+                )
+            }
+        }
+
+        btnTabVoice?.setOnClickListener {
+            layoutVoice.visibility = View.VISIBLE
+            layoutQwerty.visibility = View.GONE
+            layoutDict.visibility = View.GONE
+            updateTabColors(btnTabVoice, listOf(btnTabType, btnTabDict))
+        }
+
+        btnTabType?.setOnClickListener {
+            layoutVoice.visibility = View.GONE
+            layoutQwerty.visibility = View.VISIBLE
+            layoutDict.visibility = View.GONE
+            updateTabColors(btnTabType, listOf(btnTabVoice, btnTabDict))
+        }
+
+        btnTabDict?.setOnClickListener {
+            layoutVoice.visibility = View.GONE
+            layoutQwerty.visibility = View.GONE
+            layoutDict.visibility = View.VISIBLE
+            updateTabColors(btnTabDict, listOf(btnTabVoice, btnTabType))
+
+            // Pre-populate with the last word of preview
+            val prevText = txtPreview?.text?.toString() ?: ""
+            if (prevText.isNotEmpty() && prevText != getString(R.string.preview_hint)) {
+                val words = prevText.trim().split("\\s+".toRegex())
+                val lastWord = words.lastOrNull() ?: ""
+                view.findViewById<EditText>(R.id.edit_dict_wrong)?.setText(lastWord)
+            }
+        }
+
+        btnTabSwitch?.setOnClickListener {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val token = window.window?.attributes?.token
+            if (token != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    switchToNextInputMethod(false)
+                } else {
+                    @Suppress("DEPRECATION")
+                    imm.switchToNextInputMethod(token, false)
+                }
+            }
+        }
+
+        // Setup QWERTY keys recursively
+        setupQwertyKeys(layoutQwerty as ViewGroup)
+
+        // Setup Dictionary Add Panel
+        val editWrong = view.findViewById<EditText>(R.id.edit_dict_wrong)
+        val editCorrect = view.findViewById<EditText>(R.id.edit_dict_correct)
+        val btnDictSave = view.findViewById<Button>(R.id.btn_dict_save)
+        val btnDictCancel = view.findViewById<Button>(R.id.btn_dict_cancel)
+
+        btnDictSave?.setOnClickListener {
+            val wrong = editWrong?.text?.toString() ?: ""
+            val correct = editCorrect?.text?.toString() ?: ""
+            if (wrong.isNotBlank() && correct.isNotBlank()) {
+                addDictionaryItem(wrong, correct)
+                editWrong.setText("")
+                editCorrect.setText("")
+                btnTabVoice?.performClick()
+            }
+        }
+
+        btnDictCancel?.setOnClickListener {
+            editWrong?.setText("")
+            editCorrect?.setText("")
+            btnTabVoice?.performClick()
+        }
+
+        // Set default tab state
+        btnTabVoice?.performClick()
 
         setIdleState()
         return view
@@ -76,7 +187,6 @@ class OpenFreeIME : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        // Re-check model on each keyboard activation (user might have changed path in settings)
         reloadModel()
         txtPreview?.text = getString(R.string.preview_hint)
         if (!isRecording) setIdleState()
@@ -94,6 +204,7 @@ class OpenFreeIME : InputMethodService() {
         if (isRecording) {
             audioRecorder.stopRecording()
         }
+        stopPulseAnimation()
         whisperEngine.unloadModel()
     }
 
@@ -129,7 +240,6 @@ class OpenFreeIME : InputMethodService() {
         setRecordingState()
 
         audioRecorder.startRecording { samples ->
-            // Callback runs on the AudioRecorder background thread
             onSamplesReady(samples)
         }
     }
@@ -141,7 +251,6 @@ class OpenFreeIME : InputMethodService() {
         txtPreview?.text = "Transcribing..."
         setProcessingState()
 
-        // stopRecording() signals the thread to stop and triggers the callback
         Thread { audioRecorder.stopRecording() }.start()
     }
 
@@ -156,10 +265,11 @@ class OpenFreeIME : InputMethodService() {
         }
 
         val text = whisperEngine.transcribe(samples)
+        val correctedText = applyDictionary(text)
 
         mainHandler.post {
             isTranscribing = false
-            val trimmed = text.trim()
+            val trimmed = correctedText.trim()
             if (trimmed.isNotEmpty()) {
                 currentInputConnection?.commitText(trimmed, /* newCursorPosition= */ 1)
                 txtPreview?.text = trimmed
@@ -170,21 +280,116 @@ class OpenFreeIME : InputMethodService() {
         }
     }
 
+    // ── QWERTY key handling ────────────────────────────────────────────────────
+
+    private fun setupQwertyKeys(viewGroup: ViewGroup) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                setupQwertyKeys(child)
+            } else if (child is Button) {
+                child.setOnClickListener {
+                    handleKeyClick(child.text.toString())
+                }
+            }
+        }
+    }
+
+    private fun handleKeyClick(key: String) {
+        val ic = currentInputConnection ?: return
+        when (key) {
+            "⌫" -> {
+                ic.deleteSurroundingText(1, 0)
+            }
+            "Space" -> {
+                ic.commitText(" ", 1)
+            }
+            "⏎" -> {
+                ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+            }
+            "⇧" -> {
+                isShifted = !isShifted
+                toggleQwertyShift()
+            }
+            else -> {
+                val textToCommit = if (isShifted) key.uppercase() else key.lowercase()
+                ic.commitText(textToCommit, 1)
+                if (isShifted) {
+                    isShifted = false
+                    toggleQwertyShift()
+                }
+            }
+        }
+    }
+
+    private fun toggleQwertyShift() {
+        val layoutQwerty = keyboardView?.findViewById<ViewGroup>(R.id.layout_qwerty) ?: return
+        updateKeyCase(layoutQwerty)
+    }
+
+    private fun updateKeyCase(viewGroup: ViewGroup) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                updateKeyCase(child)
+            } else if (child is Button) {
+                val txt = child.text.toString()
+                if (txt.length == 1 && txt[0].isLetter()) {
+                    child.text = if (isShifted) txt.uppercase() else txt.lowercase()
+                }
+            }
+        }
+    }
+
+    // ── Dictionary Corrections ─────────────────────────────────────────────────
+
+    private fun getDictionaryMappings(): Map<String, String> {
+        val raw = prefs.getString(KEY_DICTIONARY_MAPPINGS, "") ?: ""
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(";").mapNotNull {
+            val parts = it.split("->")
+            if (parts.size == 2) {
+                parts[0] to parts[1]
+            } else null
+        }.toMap()
+    }
+
+    private fun addDictionaryItem(wrong: String, correct: String) {
+        val current = getDictionaryMappings().toMutableMap()
+        current[wrong.trim().lowercase()] = correct.trim()
+        val raw = current.map { "${it.key}->${it.value}" }.joinToString(";")
+        prefs.edit().putString(KEY_DICTIONARY_MAPPINGS, raw).apply()
+    }
+
+    private fun applyDictionary(text: String): String {
+        var result = text
+        val mappings = getDictionaryMappings()
+        for ((wrong, correct) in mappings) {
+            val regex = "(?i)\\b${Pattern.quote(wrong)}\\b".toRegex()
+            result = result.replace(regex, correct)
+        }
+        return result
+    }
+
     // ── UI helpers ─────────────────────────────────────────────────────────────
 
     private fun setIdleState() {
         txtStatus?.text = getString(R.string.status_idle)
         applyMicStyle(recording = false)
+        stopPulseAnimation()
     }
 
     private fun setRecordingState() {
         txtStatus?.text = getString(R.string.status_listening)
         applyMicStyle(recording = true)
+        startPulseAnimation()
     }
 
     private fun setProcessingState() {
         txtStatus?.text = getString(R.string.status_processing)
         applyMicStyle(recording = false)
+        stopPulseAnimation()
     }
 
     private fun applyMicStyle(recording: Boolean) {
@@ -206,6 +411,38 @@ class OpenFreeIME : InputMethodService() {
         }
     }
 
+    private fun startPulseAnimation() {
+        val ring = pulseRing ?: return
+        ring.visibility = View.VISIBLE
+        ring.alpha = 0.6f
+        ring.scaleX = 1.0f
+        ring.scaleY = 1.0f
+
+        val scaleX = android.animation.ObjectAnimator.ofFloat(ring, "scaleX", 1.0f, 1.6f)
+        val scaleY = android.animation.ObjectAnimator.ofFloat(ring, "scaleY", 1.0f, 1.6f)
+        val alpha = android.animation.ObjectAnimator.ofFloat(ring, "alpha", 0.6f, 0.0f)
+
+        scaleX.repeatCount = android.animation.ValueAnimator.INFINITE
+        scaleX.repeatMode = android.animation.ValueAnimator.RESTART
+        scaleY.repeatCount = android.animation.ValueAnimator.INFINITE
+        scaleY.repeatMode = android.animation.ValueAnimator.RESTART
+        alpha.repeatCount = android.animation.ValueAnimator.INFINITE
+        alpha.repeatMode = android.animation.ValueAnimator.RESTART
+
+        pulseAnimator = android.animation.AnimatorSet().apply {
+            playTogether(scaleX, scaleY, alpha)
+            duration = 1200
+            start()
+        }
+    }
+
+    private fun stopPulseAnimation() {
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        pulseRing?.alpha = 0.0f
+        pulseRing?.visibility = View.GONE
+    }
+
     private fun openSettings() {
         val intent = Intent(this, SettingsActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -225,5 +462,6 @@ class OpenFreeIME : InputMethodService() {
         const val PREFS_NAME         = "openfree_prefs"
         const val KEY_MODEL_PATH     = "pref_key_model_path"
         const val KEY_REMOTE_FALLBACK_URL = "pref_key_remote_fallback_url"
+        const val KEY_DICTIONARY_MAPPINGS = "pref_key_dictionary_mappings"
     }
 }

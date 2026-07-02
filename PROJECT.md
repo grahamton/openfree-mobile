@@ -1,14 +1,16 @@
 # Project: OpenFree Android Voice-Dictation Keyboard
 
 ## Architecture
-This is an offline-first, local voice-dictation keyboard (IME) application for Android.
+This is an offline-first, local voice-dictation and typing hybrid keyboard (IME) application for Android.
 The application consists of a system-level Input Method Editor (IME) service written in Kotlin, which interacts with:
 1. An Audio Capture Engine (`AudioRecorder.kt`) for high-fidelity microphone input.
 2. An In-Process Whisper.cpp engine compiled via Android NDK/CMake and exposed via a custom JNI Bridge.
-3. A Settings & Configuration UI (`SettingsActivity.kt`) that handles preferences and model downloads.
+3. A dynamic tab switcher providing Voice Dictation (with pulsing animation), a QWERTY Typing Layout for inline editing, and a Quick Dictionary Corrections panel.
+4. A Settings & Configuration UI (`SettingsActivity.kt`) that handles preferences, local dictionary mappings, and model downloads.
 
 Data flow:
-`User Interaction (Mic Tap) -> AudioRecorder (AudioRecord 16-bit PCM @ 16kHz mono) -> FloatArray -> WhisperEngine (JNI to C++ whisper.cpp) -> Transcription String -> OpenFreeIME (commitText) -> Active Input Connection`
+`User Interaction (Mic Tap) -> AudioRecorder (AudioRecord 16-bit PCM @ 16kHz mono) -> FloatArray -> WhisperEngine (JNI to C++ whisper.cpp) -> Raw Transcription -> Apply Corrections Dictionary -> OpenFreeIME (commitText) -> Active Input Connection`
+`User Interaction (QWERTY Tap) -> commitText -> Active Input Connection`
 
 ## Code Layout
 - `app/build.gradle.kts` - Module build configuration

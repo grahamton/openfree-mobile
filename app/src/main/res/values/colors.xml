@@ -1,47 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Fieldwork Design System — Dark Theme -->
-    <color name="bg_primary">#0D0C0A</color>
-    <color name="bg_secondary">#161410</color>
-    <color name="bg_tertiary">#1E1B16</color>
+    <!-- Modern Material 3 Colors - Default Light -->
+    <color name="bg_primary">#FEF7FF</color>
+    <color name="bg_secondary">#F3EDF7</color>
+    <color name="bg_tertiary">#EAE2F3</color>
 
-    <color name="surface">#19120E</color>
-    <color name="surface_dim">#19120E</color>
-    <color name="surface_bright">#413733</color>
-    <color name="surface_container_lowest">#140D09</color>
-    <color name="surface_container_low">#221A16</color>
-    <color name="surface_container">#261E1A</color>
-    <color name="surface_container_high">#312824</color>
-    <color name="surface_container_highest">#3C332E</color>
+    <color name="surface">#FEF7FF</color>
+    <color name="surface_dim">#DED8E1</color>
+    <color name="surface_bright">#FDF7FF</color>
+    <color name="surface_container_lowest">#FFFFFF</color>
+    <color name="surface_container_low">#F7F2FA</color>
+    <color name="surface_container">#F3EDF7</color>
+    <color name="surface_container_high">#ECE6F0</color>
+    <color name="surface_container_highest">#E6E1E9</color>
 
-    <color name="on_surface">#EFDFD9</color>
-    <color name="on_surface_variant">#DAC1B7</color>
+    <color name="on_surface">#1D1B20</color>
+    <color name="on_surface_variant">#49454F</color>
 
-    <color name="primary">#FFB691</color>
-    <color name="on_primary">#552000</color>
-    <color name="primary_container">#D27A4A</color>
-    <color name="on_primary_container">#4A1B00</color>
+    <color name="primary">#6750A4</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#EADDFF</color>
+    <color name="on_primary_container">#21005D</color>
 
-    <color name="secondary">#9DD3A8</color>
-    <color name="on_secondary">#00391A</color>
-    <color name="secondary_container">#205331</color>
-    <color name="on_secondary_container">#8FC59A</color>
+    <color name="secondary">#386A20</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="secondary_container">#B8F397</color>
+    <color name="on_secondary_container">#042100</color>
 
-    <color name="tertiary">#61D8D8</color>
-    <color name="on_tertiary">#003737</color>
+    <color name="tertiary">#7D5260</color>
+    <color name="on_tertiary">#FFFFFF</color>
 
-    <color name="error">#FFB4AB</color>
-    <color name="on_error">#690005</color>
+    <color name="error">#B3261E</color>
+    <color name="on_error">#FFFFFF</color>
 
-    <color name="text_primary">#ECE7DE</color>
-    <color name="text_secondary">#7A7166</color>
-    <color name="text_tertiary">#4A4540</color>
+    <color name="text_primary">#1D1B20</color>
+    <color name="text_secondary">#49454F</color>
+    <color name="text_tertiary">#79747E</color>
 
-    <color name="border_primary">#2C2820</color>
-    <color name="border_focus">#D07848</color>
-    <color name="outline">#A28C82</color>
-    <color name="outline_variant">#54433B</color>
+    <color name="border_primary">#CAC4D0</color>
+    <color name="border_focus">#6750A4</color>
+    <color name="outline">#79747E</color>
+    <color name="outline_variant">#CAC4D0</color>
 
-    <color name="gold">#C49A3C</color>
-    <color name="rose">#C06060</color>
+    <color name="gold">#E6A100</color>
+    <color name="rose">#B3261E</color>
 </resources>
