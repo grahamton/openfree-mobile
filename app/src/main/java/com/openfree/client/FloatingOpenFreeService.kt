@@ -19,13 +19,16 @@ import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.VelocityTracker
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import java.util.regex.Pattern
+import android.os.PowerManager
 
 
 /**
@@ -55,6 +58,13 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
     private var loadedModelPath: String? = null
     private var isDragActive = false
 
+    private var pillContainer: View? = null
+    private var tvTimer: TextView? = null
+    private var waveformContainer: View? = null
+    private var velocityTracker: VelocityTracker? = null
+    private var lastDragX = 0
+    private var recordingSeconds = 0
+
 
     override fun onCreate() {
         super.onCreate()
@@ -79,6 +89,9 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_layout, null)
 
         btnFloatingMic = floatingView.findViewById(R.id.btn_floating_mic)
+        pillContainer = floatingView.findViewById(R.id.floating_pill_container)
+        tvTimer = floatingView.findViewById(R.id.tv_timer)
+        waveformContainer = floatingView.findViewById(R.id.waveform_container)
 
         // Overlay layout parameters using specialized accessibility overlay type
         val params = WindowManager.LayoutParams(
@@ -119,12 +132,24 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                     HapticFeedbackConstants.LONG_PRESS,
                     HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                 )
-                floatingView.animate()
-                    .scaleX(1.15f)
-                    .scaleY(1.15f)
-                    .alpha(0.85f)
-                    .setDuration(150)
-                    .start()
+                
+                // Scale from 1.0 to 1.12 using spring/animator
+                ValueAnimator.ofFloat(1.0f, 1.12f).apply {
+                    duration = 200
+                    interpolator = android.view.animation.OvershootInterpolator(1.2f)
+                    addUpdateListener { animation ->
+                        val scale = animation.animatedValue as Float
+                        floatingView.scaleX = scale
+                        floatingView.scaleY = scale
+                        pillContainer?.elevation = (6 + (10 * (scale - 1.0f) / 0.12f)) * density
+                    }
+                    start()
+                }
+
+                // Dim background behind overlay to 0.7 dim amount
+                windowParams?.flags = windowParams!!.flags or WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                windowParams?.dimAmount = 0.7f
+                windowManager.updateViewLayout(floatingView, windowParams)
             }
         }
 
@@ -141,9 +166,14 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
                     initialY = params.y
+                    lastDragX = params.x
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     isDragActive = false
+                    
+                    velocityTracker = VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+                    
                     mainHandler.postDelayed(longPressRunnable, 350)
                     true
                 }
@@ -153,41 +183,109 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                     if (!isDragActive && (Math.abs(deltaX) > 15 || Math.abs(deltaY) > 15)) {
                         mainHandler.removeCallbacks(longPressRunnable)
                     }
+                    
+                    velocityTracker?.addMovement(event)
+                    
                     if (isDragActive) {
-                        params.x = (initialX + deltaX.toInt()).coerceIn(0, maxX)
+                        val currentX = (initialX + deltaX.toInt()).coerceIn(0, maxX)
+                        params.x = currentX
                         params.y = (initialY + deltaY.toInt()).coerceIn(0, maxY)
+                        
+                        // CLOCK_TICK midline haptic check
+                        val prevX = lastDragX
+                        val midline = sw / 2
+                        if ((prevX < midline && currentX >= midline) || (prevX >= midline && currentX < midline)) {
+                            btnFloatingMic?.performHapticFeedback(
+                                HapticFeedbackConstants.CLOCK_TICK,
+                                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                            )
+                        }
+                        lastDragX = currentX
+                        
                         windowManager.updateViewLayout(floatingView, params)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
+                    velocityTracker?.addMovement(event)
+                    velocityTracker?.computeCurrentVelocity(1000)
+                    val vX = velocityTracker?.xVelocity ?: 0f
+                    val vY = velocityTracker?.yVelocity ?: 0f
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+
                     if (isDragActive) {
                         isDragActive = false
                         btnFloatingMic?.performHapticFeedback(
                             HapticFeedbackConstants.KEYBOARD_TAP,
                             HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
                         )
-                        val startX = params.x
-                        val targetX = if (startX + w / 2 < sw / 2) 0 else maxX
                         
-                        ValueAnimator.ofInt(startX, targetX).apply {
+                        // Restore scale and elevation
+                        ValueAnimator.ofFloat(floatingView.scaleX, 1.0f).apply {
                             duration = 200
                             addUpdateListener { animation ->
-                                if (floatingView.parent != null) {
-                                    params.x = animation.animatedValue as Int
-                                    windowManager.updateViewLayout(floatingView, params)
-                                }
+                                val scale = animation.animatedValue as Float
+                                floatingView.scaleX = scale
+                                floatingView.scaleY = scale
+                                pillContainer?.elevation = (6 + (10 * (scale - 1.0f) / 0.12f)) * density
                             }
                             start()
                         }
 
-                        floatingView.animate()
-                            .scaleX(1.0f)
-                            .scaleY(1.0f)
-                            .alpha(1.0f)
-                            .setDuration(200)
-                            .start()
+                        // Clear background dim
+                        windowParams?.flags = windowParams!!.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND.inv()
+                        windowParams?.dimAmount = 0.0f
+                        windowManager.updateViewLayout(floatingView, windowParams)
+
+                        // Calculate target rails
+                        val startX = params.x
+                        val startY = params.y
+                        
+                        val insets = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            floatingView.rootWindowInsets
+                        } else {
+                            null
+                        }
+                        val insetL = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            insets?.getInsets(android.view.WindowInsets.Type.systemBars())?.left ?: 0
+                        } else {
+                            0
+                        }
+                        val insetR = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            insets?.getInsets(android.view.WindowInsets.Type.systemBars())?.right ?: 0
+                        } else {
+                            0
+                        }
+                        
+                        val targetLeftX = insetL + (8 * density).toInt()
+                        val targetRightX = sw - w - insetR - (8 * density).toInt()
+                        
+                        val targetX = if (vX > 1000f) {
+                            targetRightX
+                        } else if (vX < -1000f) {
+                            targetLeftX
+                        } else {
+                            if (startX + w / 2 < sw / 2) targetLeftX else targetRightX
+                        }
+                        
+                        val statusBar = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            insets?.getInsets(android.view.WindowInsets.Type.statusBars())?.top ?: (24 * density).toInt()
+                        } else {
+                            (24 * density).toInt()
+                        }
+                        val gestureInset = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            insets?.getInsets(android.view.WindowInsets.Type.systemGestures())?.bottom ?: (48 * density).toInt()
+                        } else {
+                            (48 * density).toInt()
+                        }
+                        val minPlayY = statusBar + (16 * density).toInt()
+                        val maxPlayY = sh - h - gestureInset - (72 * density).toInt()
+                        val targetY = startY.coerceIn(minPlayY, maxPlayY)
+                        
+                        // Damped harmonic oscillator snapping
+                        startSpringAnimation(startX, targetX, startY, targetY, vX, vY, params, sw, sh, w, h, maxX)
                     } else {
                         v.performClick()
                         toggleRecording()
@@ -259,15 +357,78 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         if (currentState == State.RECORDING) stopAndTranscribe() else startRecording()
     }
 
+    private val visualizerRunnable = object : Runnable {
+        override fun run() {
+            if (currentState == State.RECORDING) {
+                val amplitude = audioRecorder.peakAmplitude
+                val container = waveformContainer as? android.view.ViewGroup
+                if (container != null && container.visibility == View.VISIBLE) {
+                    val count = container.childCount
+                    val density = resources.displayMetrics.density
+                    for (i in 0 until count) {
+                        val bar = container.getChildAt(i)
+                        val timeFactor = System.currentTimeMillis() / 120.0
+                        val wave = Math.sin(timeFactor + i * 0.6) * 0.5 + 0.5
+                        val scaleFactor = 0.2 + 0.8 * amplitude * wave
+                        val maxBarHeight = 24 * density
+                        val newHeight = (maxBarHeight * scaleFactor).toInt().coerceAtLeast((3 * density).toInt())
+                        
+                        val lp = bar.layoutParams
+                        lp.height = newHeight
+                        bar.layoutParams = lp
+                    }
+                }
+                mainHandler.postDelayed(this, 50)
+            }
+        }
+    }
+
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            if (currentState == State.RECORDING) {
+                recordingSeconds++
+                val minutes = recordingSeconds / 60
+                val seconds = recordingSeconds % 60
+                tvTimer?.text = String.format("%d:%02d", minutes, seconds)
+                mainHandler.postDelayed(this, 1000)
+            }
+        }
+    }
+
     private fun startRecording() {
         currentState = State.RECORDING
         applyMicStyle(State.RECORDING)
         performHaptic()
 
+        tvTimer?.text = "0:00"
+        recordingSeconds = 0
+
+        morphPillWidth(true)
 
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
         }
+
+        // Apply frosted glass blur to overlay if theme is frosted
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        if (theme == "frosted" && android.os.Build.VERSION.SDK_INT >= 31) {
+            val pm = getSystemService(POWER_SERVICE) as? PowerManager
+            val isPowerSave = pm?.isPowerSaveMode ?: false
+            if (!isPowerSave) {
+                val blurRadius = prefs.getInt("pref_key_blur_radius", 20)
+                windowParams?.let { wp ->
+                    wp.flags = wp.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+                    try {
+                        val field = WindowManager.LayoutParams::class.java.getField("blurBehindRadius")
+                        field.setInt(wp, blurRadius)
+                    } catch (_: Exception) { }
+                    try { windowManager.updateViewLayout(floatingView, wp) } catch (_: Exception) { }
+                }
+            }
+        }
+
+        mainHandler.postDelayed(timerRunnable, 1000)
+        mainHandler.post(visualizerRunnable)
     }
 
     private fun stopAndTranscribe() {
@@ -275,6 +436,10 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         applyMicStyle(State.TRANSCRIBING)
         performHaptic()
 
+        morphPillWidth(false)
+
+        // Clear frosted glass blur
+        clearFrostedBlur()
 
         Thread {
             audioRecorder.stopRecording()
@@ -286,6 +451,8 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
             mainHandler.post {
                 currentState = State.IDLE
                 applyMicStyle(State.IDLE)
+                morphPillWidth(false)
+                triggerHaptic(false)
             }
             return
         }
@@ -296,11 +463,119 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         mainHandler.post {
             currentState = State.IDLE
             applyMicStyle(State.IDLE)
+            morphPillWidth(false)
+            clearFrostedBlur()
             val trimmed = correctedText.trim()
             if (trimmed.isNotEmpty()) {
                 injectText(trimmed)
+                triggerHaptic(true)
+            } else {
+                triggerHaptic(false)
             }
         }
+    }
+
+    private fun triggerHaptic(success: Boolean) {
+        val haptic = if (success) {
+            if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP
+        } else {
+            if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS
+        }
+        btnFloatingMic?.performHapticFeedback(
+            haptic,
+            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+        )
+    }
+
+    private fun morphPillWidth(recording: Boolean) {
+        val container = pillContainer ?: return
+        val density = resources.displayMetrics.density
+        val startWidth = container.width
+        val targetWidth = if (recording) (168 * density).toInt() else (56 * density).toInt()
+        
+        if (startWidth == targetWidth) return
+        
+        if (recording) {
+            tvTimer?.visibility = View.VISIBLE
+            waveformContainer?.visibility = View.VISIBLE
+        } else {
+            tvTimer?.visibility = View.GONE
+            waveformContainer?.visibility = View.GONE
+        }
+
+        ValueAnimator.ofInt(startWidth, targetWidth).apply {
+            duration = 350
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener { animation ->
+                val w = animation.animatedValue as Int
+                val lp = container.layoutParams
+                lp.width = w
+                container.layoutParams = lp
+            }
+            start()
+        }
+    }
+
+    private fun startSpringAnimation(startX: Int, targetX: Int, startY: Int, targetY: Int, vX: Float, vY: Float, params: WindowManager.LayoutParams, sw: Int, sh: Int, w: Int, h: Int, maxX: Int) {
+        val density = resources.displayMetrics.density
+        
+        val insets = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            floatingView.rootWindowInsets
+        } else {
+            null
+        }
+        val statusBar = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            insets?.getInsets(android.view.WindowInsets.Type.statusBars())?.top ?: (24 * density).toInt()
+        } else {
+            (24 * density).toInt()
+        }
+        val gestureInset = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            insets?.getInsets(android.view.WindowInsets.Type.systemGestures())?.bottom ?: (48 * density).toInt()
+        } else {
+            (48 * density).toInt()
+        }
+
+        val minPlayY = statusBar + (16 * density).toInt()
+        val maxPlayY = sh - h - gestureInset - (72 * density).toInt()
+
+        val startTime = System.currentTimeMillis()
+        // Calibrated for stiffness = 1500 (omega0 = 38.73) and damping = 0.75 (gamma = 29.05, omegaD = 25.62)
+        val gamma = 29.05
+        val omegaD = 25.62
+        val Ax = (startX - targetX).toDouble()
+        val Bx = (vX + gamma * Ax) / omegaD
+        
+        val Ay = (startY - targetY).toDouble()
+        val By = (vY + gamma * Ay) / omegaD
+
+        val springAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1000
+            addUpdateListener { anim ->
+                if (floatingView.parent == null) {
+                    anim.cancel()
+                    return@addUpdateListener
+                }
+                val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
+                val multiplier = Math.exp(-gamma * elapsed)
+                
+                val cx = (multiplier * (Ax * Math.cos(omegaD * elapsed) + Bx * Math.sin(omegaD * elapsed)) + targetX).toInt()
+                val cy = (multiplier * (Ay * Math.cos(omegaD * elapsed) + By * Math.sin(omegaD * elapsed)) + targetY).toInt()
+
+                params.x = cx.coerceIn(0, maxX)
+                params.y = cy.coerceIn(minPlayY, maxPlayY)
+                
+                try {
+                    windowManager.updateViewLayout(floatingView, params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating layout in spring", e)
+                }
+
+                if (multiplier < 0.005) {
+                    anim.cancel()
+                }
+            }
+        }
+        springAnimator.start()
     }
 
     private fun findFocusedInput(): AccessibilityNodeInfo? {
@@ -420,6 +695,21 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         return result
     }
 
+    // ── Frosted Blur ──────────────────────────────────────────────────────────
+
+    private fun clearFrostedBlur() {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            windowParams?.let { wp ->
+                wp.flags = wp.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+                try {
+                    val field = WindowManager.LayoutParams::class.java.getField("blurBehindRadius")
+                    field.setInt(wp, 0)
+                } catch (_: Exception) { }
+                try { windowManager.updateViewLayout(floatingView, wp) } catch (_: Exception) { }
+            }
+        }
+    }
+
     // ── Visual Animations ──────────────────────────────────────────────────────
 
     private fun performHaptic() {
@@ -430,39 +720,113 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
     }
 
     private fun applyMicStyle(state: State) {
-        btnFloatingMic ?: return
-        when (state) {
-            State.IDLE -> {
-                btnFloatingMic!!.backgroundTintList = null
-                btnFloatingMic!!.setBackgroundResource(R.drawable.floating_mic_bg)
-                btnFloatingMic!!.setImageResource(R.drawable.ic_mic)
-                btnFloatingMic!!.setColorFilter(
-                    ContextCompat.getColor(this, R.color.on_primary),
-                    PorterDuff.Mode.SRC_IN
-                )
-                stopBlinkingAnimation()
+        val btn = btnFloatingMic ?: return
+        val container = pillContainer ?: return
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        val density = resources.displayMetrics.density
+        
+        btn.backgroundTintList = null
+        btn.alpha = 1.0f
+        
+        // Disable individual background on the ImageButton to prevent duplicate layering over the container
+        btn.setBackgroundResource(0)
+        
+        if (state == State.IDLE) {
+            stopBlinkingAnimation()
+        } else {
+            startBlinkingAnimation()
+        }
+
+        // Apply theme-specific styling to the outer container and visualizer components
+        when (theme) {
+            "oled" -> {
+                // OLED: pure black background, 1.5px solid border, 0 elevation
+                container.elevation = 0f
+                val strokeColor = if (state == State.RECORDING) "#7FFFCB" else "#EDEDED"
+                val oledBg = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = 28 * density
+                    setColor(android.graphics.Color.parseColor("#000000"))
+                    setStroke((1.5f * density).toInt(), android.graphics.Color.parseColor(strokeColor))
+                }
+                container.background = oledBg
+                
+                // Mic Button Icon Tint
+                val iconColor = if (state == State.RECORDING) "#7FFFCB" else "#EDEDED"
+                btn.setColorFilter(android.graphics.Color.parseColor(iconColor), PorterDuff.Mode.SRC_IN)
+                btn.setImageResource(if (state == State.RECORDING) R.drawable.ic_stop else R.drawable.ic_mic)
+                
+                // Timer Text Color
+                tvTimer?.setTextColor(android.graphics.Color.parseColor("#EDEDED"))
+                
+                // Waveform bars tint
+                val waveContainer = waveformContainer as? android.view.ViewGroup
+                if (waveContainer != null) {
+                    val count = waveContainer.childCount
+                    for (i in 0 until count) {
+                        waveContainer.getChildAt(i).setBackgroundColor(android.graphics.Color.parseColor("#7FFFCB"))
+                    }
+                }
             }
-            State.RECORDING -> {
-                btnFloatingMic!!.backgroundTintList = null
-                btnFloatingMic!!.setBackgroundResource(R.drawable.floating_mic_bg_active)
-                btnFloatingMic!!.setImageResource(R.drawable.ic_stop)
-                btnFloatingMic!!.setColorFilter(
-                    ContextCompat.getColor(this, R.color.on_secondary),
-                    PorterDuff.Mode.SRC_IN
-                )
-                startBlinkingAnimation()
+            "frosted" -> {
+                // Frosted Glass: translucent dark background, accent/white border, custom shadows
+                container.elevation = if (state == State.RECORDING) 10f * density else 8f * density
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    val shadowColor = if (state == State.RECORDING) "#D0BCFF" else "#FFFFFF"
+                    container.outlineSpotShadowColor = android.graphics.Color.parseColor(shadowColor)
+                    container.outlineAmbientShadowColor = android.graphics.Color.parseColor(shadowColor)
+                }
+                
+                val bgColor = if (state == State.RECORDING) "#8C302D3A" else "#99302D3A"
+                val strokeColor = if (state == State.RECORDING) "#80D0BCFF" else "#2EFFFFFF"
+                
+                val glassBg = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = 28 * density
+                    setColor(android.graphics.Color.parseColor(bgColor))
+                    setStroke((1 * density).toInt(), android.graphics.Color.parseColor(strokeColor))
+                }
+                container.background = glassBg
+                
+                btn.setColorFilter(android.graphics.Color.parseColor("#D0BCFF"), PorterDuff.Mode.SRC_IN)
+                btn.setImageResource(if (state == State.RECORDING) R.drawable.ic_stop else R.drawable.ic_mic)
+                
+                tvTimer?.setTextColor(android.graphics.Color.parseColor("#CAC4D0"))
+                
+                val waveContainer = waveformContainer as? android.view.ViewGroup
+                if (waveContainer != null) {
+                    val count = waveContainer.childCount
+                    for (i in 0 until count) {
+                        waveContainer.getChildAt(i).setBackgroundColor(android.graphics.Color.parseColor("#D0BCFF"))
+                    }
+                }
             }
-            State.TRANSCRIBING -> {
-                btnFloatingMic!!.setBackgroundResource(R.drawable.floating_mic_bg)
-                btnFloatingMic!!.backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    ContextCompat.getColor(this, R.color.gold)
-                )
-                btnFloatingMic!!.setImageResource(R.drawable.ic_mic)
-                btnFloatingMic!!.setColorFilter(
-                    ContextCompat.getColor(this, R.color.on_primary),
-                    PorterDuff.Mode.SRC_IN
-                )
-                startBlinkingAnimation()
+            else -> {
+                // Classic M3 theme
+                container.elevation = 6f * density
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    container.outlineSpotShadowColor = android.graphics.Color.BLACK
+                    container.outlineAmbientShadowColor = android.graphics.Color.BLACK
+                }
+                
+                val bgRes = if (state == State.RECORDING) R.drawable.floating_mic_bg_active else R.drawable.floating_mic_bg
+                container.setBackgroundResource(bgRes)
+                
+                val iconColorRes = if (state == State.RECORDING) R.color.on_secondary else R.color.on_primary
+                btn.setColorFilter(ContextCompat.getColor(this, iconColorRes), PorterDuff.Mode.SRC_IN)
+                btn.setImageResource(if (state == State.RECORDING) R.drawable.ic_stop else R.drawable.ic_mic)
+                
+                val timerColorRes = if (state == State.RECORDING) R.color.on_secondary else R.color.on_primary
+                tvTimer?.setTextColor(ContextCompat.getColor(this, timerColorRes))
+                
+                val waveContainer = waveformContainer as? android.view.ViewGroup
+                if (waveContainer != null) {
+                    val count = waveContainer.childCount
+                    val barColor = ContextCompat.getColor(this, if (state == State.RECORDING) R.color.on_secondary else R.color.on_primary)
+                    for (i in 0 until count) {
+                        waveContainer.getChildAt(i).setBackgroundColor(barColor)
+                    }
+                }
             }
         }
     }

@@ -1,24 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Floating speech overlay layout -->
+<!-- Floating speech overlay layout with morphable pill container -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/floating_root"
-    android:layout_width="76dp"
-    android:layout_height="76dp"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
     android:clipChildren="false"
     android:clipToPadding="false">
 
-
-
-    <!-- Circular Speech Trigger Button -->
-    <ImageButton
-        android:id="@+id/btn_floating_mic"
+    <LinearLayout
+        android:id="@+id/floating_pill_container"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="center"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:background="@drawable/floating_mic_bg"
-        android:src="@drawable/ic_mic"
-        android:scaleType="center"
-        android:tint="#FFFFFF"
         android:elevation="6dp"
-        android:contentDescription="OpenFree Floating Dictation" />
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Mic / Stop Button -->
+        <ImageButton
+            android:id="@+id/btn_floating_mic"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_vertical"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_mic"
+            android:scaleType="centerInside"
+            android:tint="#FFFFFF"
+            android:contentDescription="OpenFree Floating Dictation" />
+
+        <!-- Timer (only visible during recording) -->
+        <TextView
+            android:id="@+id/tv_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0:00"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginStart="8dp"
+            android:visibility="gone" />
+
+        <!-- Waveform visualizer container (12 bars, only visible during recording) -->
+        <LinearLayout
+            android:id="@+id/waveform_container"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginStart="8dp"
+            android:visibility="gone">
+            <View android:layout_width="2dp" android:layout_height="12dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="16dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="8dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="20dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="14dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="10dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="18dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="12dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="15dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="7dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="16dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+            <View android:layout_width="2dp" android:layout_height="10dp" android:layout_margin="1dp" android:background="#FFFFFF"/>
+        </LinearLayout>
+    </LinearLayout>
 </FrameLayout>

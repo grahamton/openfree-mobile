@@ -73,6 +73,17 @@ class TestF1KeyboardUIAndLifecycle(unittest.TestCase):
         content = read(repo("app/src/main/res/layout/keyboard_view.xml"))
         self.assertIn("btn_mic", content)
 
+    def test_keyboard_view_has_visualizer_and_dots_layout(self):
+        content = read(repo("app/src/main/res/layout/keyboard_view.xml"))
+        self.assertIn("ime_waveform_container", content)
+        self.assertIn("layout_dots", content)
+
+    def test_floating_layout_has_pill_timer_and_waveform(self):
+        content = read(repo("app/src/main/res/layout/floating_layout.xml"))
+        self.assertIn("floating_pill_container", content)
+        self.assertIn("tv_timer", content)
+        self.assertIn("waveform_container", content)
+
 
 # ===========================================================================
 # F1 — Fieldwork colour compliance
@@ -247,6 +258,21 @@ class TestF4SettingsAndDownloader(unittest.TestCase):
 
     def test_f4_layout_has_download_button(self):
         self.assertIn("btn_download_model", self._layout())
+
+    def test_f4_layout_has_theme_selection_panel(self):
+        self.assertIn("toggle_group_theme", self._layout())
+
+    def test_f4_layout_has_contrast_selector(self):
+        self.assertIn("toggle_group_contrast", self._layout())
+
+    def test_f4_layout_has_blur_radius_slider(self):
+        self.assertIn("slider_blur_radius", self._layout())
+
+    def test_f4_layout_has_circular_progress_indicator(self):
+        self.assertIn("progress_download_circular", self._layout())
+
+    def test_f4_layout_has_accessibility_service_switch(self):
+        self.assertIn("switch_floating_service", self._layout())
 
     def test_f4_layout_has_save_button(self):
         self.assertIn("btn_save", self._layout())

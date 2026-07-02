@@ -44,4 +44,5 @@
 
     <color name="gold">#E6A100</color>
     <color name="rose">#B3261E</color>
+    <color name="oled_accent">#7FFFCB</color>
 </resources>

@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Circular shape for active floating mic button - M3 Secondary (Green) -->
+<!-- Rounded rectangle shape for active floating mic button (morphable) -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
-        <shape android:shape="oval">
-            <solid android:color="#B8F397" /><!-- secondary_container -->
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp" />
+            <solid android:color="#B8F397" />
         </shape>
     </item>
     <item>
-        <shape android:shape="oval">
-            <solid android:color="#386A20" /><!-- secondary -->
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp" />
+            <solid android:color="#386A20" />
         </shape>
     </item>
 </selector>

@@ -52,6 +52,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnClearDictionary: Button
     private lateinit var btnToggleFloating: Button
 
+    private lateinit var circularProgressBar: com.google.android.material.progressindicator.CircularProgressIndicator
+    private lateinit var switchFloating: com.google.android.material.switchmaterial.SwitchMaterial
+
     // ── State ──────────────────────────────────────────────────────────────────
 
     private lateinit var prefs: SharedPreferences
@@ -86,14 +89,45 @@ class SettingsActivity : AppCompatActivity() {
         btnClearDictionary = findViewById(R.id.btn_clear_dictionary)
         btnToggleFloating  = findViewById(R.id.btn_toggle_floating_service)
 
+        circularProgressBar = findViewById(R.id.progress_download_circular)
+        switchFloating      = findViewById(R.id.switch_floating_service)
+
         // Restore saved preferences
         editModelPath.setText(prefs.getString(OpenFreeIME.KEY_MODEL_PATH, ""))
         editFallbackUrl.setText(prefs.getString(OpenFreeIME.KEY_REMOTE_FALLBACK_URL, ""))
+
+        // Restore theme
+        val savedTheme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        val themeButtonId = when (savedTheme) {
+            "frosted" -> R.id.btn_theme_frosted
+            "oled" -> R.id.btn_theme_oled
+            else -> R.id.btn_theme_classic
+        }
+        findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.toggle_group_theme).check(themeButtonId)
+
+        // Restore contrast
+        val savedContrast = prefs.getString("pref_key_contrast", "standard") ?: "standard"
+        val contrastButtonId = when (savedContrast) {
+            "medium" -> R.id.btn_contrast_medium
+            "high" -> R.id.btn_contrast_high
+            else -> R.id.btn_contrast_standard
+        }
+        findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.toggle_group_contrast).check(contrastButtonId)
+
+        // Restore blur radius
+        val savedBlur = prefs.getInt("pref_key_blur_radius", 20)
+        findViewById<com.google.android.material.slider.Slider>(R.id.slider_blur_radius).value = savedBlur.toFloat()
 
         btnSave.setOnClickListener { saveSettings() }
         btnDownload.setOnClickListener { downloadModel() }
         btnClearDictionary.setOnClickListener { clearDictionary() }
         btnToggleFloating.setOnClickListener {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+        }
+
+        switchFloating.isChecked = isAccessibilityServiceEnabled()
+        switchFloating.setOnCheckedChangeListener { _, _ ->
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
         }
@@ -105,6 +139,9 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateFloatingServiceButtonState()
+        if (::switchFloating.isInitialized) {
+            switchFloating.isChecked = isAccessibilityServiceEnabled()
+        }
     }
 
     private fun updateFloatingServiceButtonState() {
@@ -174,9 +211,29 @@ class SettingsActivity : AppCompatActivity() {
         val modelPath   = editModelPath.text.toString().trim()
         val fallbackUrl = editFallbackUrl.text.toString().trim()
 
+        val toggleTheme: com.google.android.material.button.MaterialButtonToggleGroup = findViewById(R.id.toggle_group_theme)
+        val selectedTheme = when (toggleTheme.checkedButtonId) {
+            R.id.btn_theme_frosted -> "frosted"
+            R.id.btn_theme_oled -> "oled"
+            else -> "classic"
+        }
+
+        val toggleContrast: com.google.android.material.button.MaterialButtonToggleGroup = findViewById(R.id.toggle_group_contrast)
+        val selectedContrast = when (toggleContrast.checkedButtonId) {
+            R.id.btn_contrast_medium -> "medium"
+            R.id.btn_contrast_high -> "high"
+            else -> "standard"
+        }
+
+        val sliderBlur: com.google.android.material.slider.Slider = findViewById(R.id.slider_blur_radius)
+        val blurRadius = sliderBlur.value.toInt()
+
         prefs.edit().apply {
             putString(OpenFreeIME.KEY_MODEL_PATH, modelPath)
             putString(OpenFreeIME.KEY_REMOTE_FALLBACK_URL, fallbackUrl)
+            putString("pref_key_theme", selectedTheme)
+            putString("pref_key_contrast", selectedContrast)
+            putInt("pref_key_blur_radius", blurRadius)
             apply()
         }
 
@@ -212,7 +269,9 @@ class SettingsActivity : AppCompatActivity() {
 
         btnDownload.isEnabled = false
         progressBar.progress  = 0
+        circularProgressBar.progress = 0
         progressBar.visibility = View.VISIBLE
+        circularProgressBar.visibility = View.VISIBLE
         txtDownloadStatus.text = getString(R.string.download_progress)
 
         downloadThread = Thread {
@@ -241,7 +300,10 @@ class SettingsActivity : AppCompatActivity() {
                             downloadedBytes += read
                             if (totalBytes > 0) {
                                 val pct = ((downloadedBytes * 100) / totalBytes).toInt()
-                                mainHandler.post { progressBar.progress = pct }
+                                mainHandler.post { 
+                                    progressBar.progress = pct 
+                                    circularProgressBar.progress = pct
+                                }
                             }
                         }
                     }
@@ -254,6 +316,7 @@ class SettingsActivity : AppCompatActivity() {
                     prefs.edit().putString(OpenFreeIME.KEY_MODEL_PATH, path).apply()
                     txtDownloadStatus.text = getString(R.string.download_success)
                     progressBar.visibility  = View.GONE
+                    circularProgressBar.visibility = View.GONE
                     btnDownload.isEnabled   = true
                 }
 
@@ -261,12 +324,14 @@ class SettingsActivity : AppCompatActivity() {
                 mainHandler.post {
                     txtDownloadStatus.text = "Download cancelled"
                     progressBar.visibility  = View.GONE
+                    circularProgressBar.visibility = View.GONE
                     btnDownload.isEnabled   = true
                 }
             } catch (e: Exception) {
                 mainHandler.post {
                     txtDownloadStatus.text = "${getString(R.string.download_failed)}: ${e.message}"
                     progressBar.visibility  = View.GONE
+                    circularProgressBar.visibility = View.GONE
                     btnDownload.isEnabled   = true
                 }
             }

@@ -37,6 +37,17 @@ class AudioRecorder {
     private var recordingThread: Thread? = null
     private val _recording = AtomicBoolean(false)
 
+    @Volatile
+    var peakAmplitude: Float = 0f
+        private set
+
+    /**
+     * Optional callback invoked on the recording thread each time a new
+     * chunk of audio is read. The parameter is the peak amplitude of
+     * the chunk normalised to [0.0, 1.0].
+     */
+    var onAmplitudeUpdate: ((Float) -> Unit)? = null
+
     // ── Public API ─────────────────────────────────────────────────────────────
 
     /**
@@ -80,6 +91,7 @@ class AudioRecorder {
 
         audioRecord = record
         _recording.set(true)
+        peakAmplitude = 0f
         record.startRecording()
         Log.i(TAG, "startRecording: capturing at ${SAMPLE_RATE} Hz mono 16-bit PCM")
 
@@ -92,7 +104,17 @@ class AudioRecorder {
             while (_recording.get()) {
                 val read = record.read(chunk, 0, chunk.size)
                 if (read > 0) {
-                    for (i in 0 until read) samples.add(chunk[i])
+                    var maxVal = 0
+                    for (i in 0 until read) {
+                        val sample = chunk[i]
+                        samples.add(sample)
+                        val absVal = Math.abs(sample.toInt())
+                        if (absVal > maxVal) {
+                            maxVal = absVal
+                        }
+                    }
+                    peakAmplitude = maxVal.toFloat() / Short.MAX_VALUE.toFloat()
+                    onAmplitudeUpdate?.invoke(peakAmplitude)
                 }
             }
 

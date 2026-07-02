@@ -17,6 +17,8 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import java.util.regex.Pattern
@@ -69,6 +71,7 @@ class OpenFreeIME : InputMethodService() {
     private var discardNextTranscription = false
     private var touchStartTime = 0L
     private var spacebarRunnable: Runnable? = null
+    private var dotsAnimator: AnimatorSet? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -243,6 +246,7 @@ class OpenFreeIME : InputMethodService() {
         }
 
         setIdleState()
+        applyTheme()
         return view
     }
 
@@ -250,6 +254,7 @@ class OpenFreeIME : InputMethodService() {
         super.onStartInputView(info, restarting)
         reloadModel()
         txtPreview?.text = getString(R.string.preview_hint)
+        applyTheme()
         if (!isRecording) setIdleState()
     }
 
@@ -308,15 +313,63 @@ class OpenFreeIME : InputMethodService() {
         if (isRecording) stopAndTranscribe() else startRecording()
     }
 
+    private val visualizerRunnable = object : Runnable {
+        override fun run() {
+            if (isRecording) {
+                val amplitude = audioRecorder.peakAmplitude
+                val container = keyboardView?.findViewById<LinearLayout>(R.id.ime_waveform_container)
+                val density = resources.displayMetrics.density
+                if (container != null && container.visibility == View.VISIBLE) {
+                    val count = container.childCount
+                    for (i in 0 until count) {
+                        val bar = container.getChildAt(i)
+                        val timeFactor = System.currentTimeMillis() / 150.0
+                        val wave = Math.sin(timeFactor + i * 0.5) * 0.5 + 0.5
+                        val scaleFactor = 0.2 + 0.8 * amplitude * wave
+                        val maxBarHeight = 28 * density
+                        val newHeight = (maxBarHeight * scaleFactor).toInt().coerceAtLeast((4 * density).toInt())
+                        
+                        val lp = bar.layoutParams
+                        lp.height = newHeight
+                        bar.layoutParams = lp
+                    }
+                }
+                mainHandler.postDelayed(this, 50)
+            }
+        }
+    }
+
     private fun startRecording() {
         isRecording = true
         txtPreview?.text = "Listening..."
         setRecordingState()
         performHaptic()
 
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        val container = keyboardView?.findViewById<View>(R.id.ime_waveform_container)
+        container?.visibility = View.VISIBLE
+        if (theme == "oled") {
+            val count = (container as? ViewGroup)?.childCount ?: 0
+            for (i in 0 until count) {
+                val bar = container?.findViewById<LinearLayout>(R.id.ime_waveform_container)?.getChildAt(i)
+                bar?.setBackgroundColor(android.graphics.Color.parseColor("#7FFFCB"))
+            }
+        } else {
+            val count = (container as? ViewGroup)?.childCount ?: 0
+            for (i in 0 until count) {
+                val bar = container?.findViewById<LinearLayout>(R.id.ime_waveform_container)?.getChildAt(i)
+                bar?.setBackgroundColor(ContextCompat.getColor(this, R.color.primary))
+            }
+        }
+
+        if (theme == "classic" || theme == "frosted") {
+            setLetterKeysAlpha(0.55f)
+        }
+
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
         }
+        mainHandler.post(visualizerRunnable)
     }
 
     private fun stopAndTranscribe() {
@@ -326,6 +379,13 @@ class OpenFreeIME : InputMethodService() {
         txtPreview?.text = "Transcribing..."
         setProcessingState()
         performHaptic()
+
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        keyboardView?.findViewById<View>(R.id.ime_waveform_container)?.visibility = View.GONE
+        
+        if (theme == "classic" || theme == "frosted") {
+            setLetterKeysAlpha(1.0f)
+        }
 
         Thread { audioRecorder.stopRecording() }.start()
     }
@@ -536,35 +596,116 @@ class OpenFreeIME : InputMethodService() {
     }
 
     private fun applyMicStyle(state: MicState) {
-        btnMic ?: return
+        val btn = btnMic ?: return
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        val density = resources.displayMetrics.density
+        
+        btn.backgroundTintList = null
+        btn.alpha = 1.0f
+        
+        if (theme == "oled") {
+            btn.elevation = 0f
+            when (state) {
+                MicState.IDLE -> {
+                    val normalBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 4 * density
+                        setColor(android.graphics.Color.parseColor("#121212"))
+                        setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#2A2A2A"))
+                    }
+                    btn.background = normalBg
+                    btn.setImageResource(R.drawable.ic_mic)
+                    btn.setColorFilter(android.graphics.Color.WHITE, PorterDuff.Mode.SRC_IN)
+                    stopTranscribingAnimation()
+                }
+                MicState.RECORDING -> {
+                    val activeBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 4 * density
+                        setColor(android.graphics.Color.parseColor("#7FFFCB"))
+                    }
+                    btn.background = activeBg
+                    btn.setImageResource(R.drawable.ic_stop)
+                    btn.setColorFilter(android.graphics.Color.BLACK, PorterDuff.Mode.SRC_IN)
+                    stopTranscribingAnimation()
+                }
+                MicState.TRANSCRIBING -> {
+                    val activeBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 4 * density
+                        setColor(android.graphics.Color.parseColor("#7FFFCB"))
+                    }
+                    btn.background = activeBg
+                    btn.setImageResource(R.drawable.ic_mic)
+                    btn.setColorFilter(android.graphics.Color.BLACK, PorterDuff.Mode.SRC_IN)
+                    startTranscribingAnimation()
+                }
+            }
+            return
+        }
+
+        if (theme == "frosted") {
+            btn.elevation = if (state == MicState.RECORDING) 18f * density else 0f
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                val shadowColor = if (state == MicState.RECORDING) "#D0BCFF" else "#FFFFFF"
+                btn.outlineSpotShadowColor = android.graphics.Color.parseColor(shadowColor)
+                btn.outlineAmbientShadowColor = android.graphics.Color.parseColor(shadowColor)
+            }
+            when (state) {
+                MicState.IDLE -> {
+                    btn.setBackgroundResource(R.drawable.mic_button_bg_frosted)
+                    btn.setImageResource(R.drawable.ic_mic)
+                    btn.setColorFilter(android.graphics.Color.parseColor("#D0BCFF"), PorterDuff.Mode.SRC_IN)
+                    stopTranscribingAnimation()
+                }
+                MicState.RECORDING -> {
+                    val activeBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 22 * density
+                        setColor(android.graphics.Color.parseColor("#D0BCFF"))
+                    }
+                    btn.background = activeBg
+                    btn.setImageResource(R.drawable.ic_stop)
+                    btn.setColorFilter(android.graphics.Color.parseColor("#21005D"), PorterDuff.Mode.SRC_IN)
+                    stopTranscribingAnimation()
+                }
+                MicState.TRANSCRIBING -> {
+                    btn.setBackgroundResource(R.drawable.mic_button_bg_frosted)
+                    btn.alpha = 0.7f
+                    btn.setImageResource(R.drawable.ic_mic)
+                    btn.setColorFilter(android.graphics.Color.parseColor("#D0BCFF"), PorterDuff.Mode.SRC_IN)
+                    startTranscribingAnimation()
+                }
+            }
+            return
+        }
+
         when (state) {
             MicState.IDLE -> {
-                btnMic!!.backgroundTintList = null
-                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg)
-                btnMic!!.setImageResource(R.drawable.ic_mic)
-                btnMic!!.setColorFilter(
+                btn.setBackgroundResource(R.drawable.mic_button_bg)
+                btn.setImageResource(R.drawable.ic_mic)
+                btn.setColorFilter(
                     ContextCompat.getColor(this, R.color.on_primary),
                     PorterDuff.Mode.SRC_IN
                 )
                 stopTranscribingAnimation()
             }
             MicState.RECORDING -> {
-                btnMic!!.backgroundTintList = null
-                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg_active)
-                btnMic!!.setImageResource(R.drawable.ic_stop)
-                btnMic!!.setColorFilter(
+                btn.setBackgroundResource(R.drawable.mic_button_bg_active)
+                btn.setImageResource(R.drawable.ic_stop)
+                btn.setColorFilter(
                     ContextCompat.getColor(this, R.color.on_secondary),
                     PorterDuff.Mode.SRC_IN
                 )
                 stopTranscribingAnimation()
             }
             MicState.TRANSCRIBING -> {
-                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg)
-                btnMic!!.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                btn.setBackgroundResource(R.drawable.mic_button_bg)
+                btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
                     ContextCompat.getColor(this, R.color.gold)
                 )
-                btnMic!!.setImageResource(R.drawable.ic_mic)
-                btnMic!!.setColorFilter(
+                btn.setImageResource(R.drawable.ic_mic)
+                btn.setColorFilter(
                     ContextCompat.getColor(this, R.color.on_primary),
                     PorterDuff.Mode.SRC_IN
                 )
@@ -575,6 +716,12 @@ class OpenFreeIME : InputMethodService() {
 
     private fun startPulseAnimation() {
         val ring = pulseRing ?: return
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        if (theme == "oled" || theme == "frosted") {
+            ring.visibility = View.GONE
+            return
+        }
+
         ring.backgroundTintList = android.content.res.ColorStateList.valueOf(
             ContextCompat.getColor(this, R.color.secondary_container)
         )
@@ -596,7 +743,7 @@ class OpenFreeIME : InputMethodService() {
 
         pulseAnimator = AnimatorSet().apply {
             playTogether(scaleX, scaleY, alpha)
-            duration = 1200
+            duration = 1600
             start()
         }
     }
@@ -617,12 +764,55 @@ class OpenFreeIME : InputMethodService() {
 
     private fun startTranscribingAnimation() {
         stopTranscribingAnimation()
-        btnMic?.let { mic ->
-            transcribingAnimator = ObjectAnimator.ofFloat(mic, "alpha", 1.0f, 0.4f).apply {
-                duration = 600
-                repeatMode = ValueAnimator.REVERSE
-                repeatCount = ValueAnimator.INFINITE
-                start()
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        if (theme == "frosted") {
+            val layoutDots = keyboardView?.findViewById<View>(R.id.layout_dots)
+            val dot1 = keyboardView?.findViewById<View>(R.id.dot1)
+            val dot2 = keyboardView?.findViewById<View>(R.id.dot2)
+            val dot3 = keyboardView?.findViewById<View>(R.id.dot3)
+            if (layoutDots != null && dot1 != null && dot2 != null && dot3 != null) {
+                layoutDots.visibility = View.VISIBLE
+                val anim1 = ObjectAnimator.ofFloat(dot1, "translationY", 0f, -10f, 0f).apply {
+                    duration = 1200
+                    repeatCount = ValueAnimator.INFINITE
+                }
+                val anim2 = ObjectAnimator.ofFloat(dot2, "translationY", 0f, -10f, 0f).apply {
+                    duration = 1200
+                    startDelay = 400
+                    repeatCount = ValueAnimator.INFINITE
+                }
+                val anim3 = ObjectAnimator.ofFloat(dot3, "translationY", 0f, -10f, 0f).apply {
+                    duration = 1200
+                    startDelay = 800
+                    repeatCount = ValueAnimator.INFINITE
+                }
+                dotsAnimator = AnimatorSet().apply {
+                    playTogether(anim1, anim2, anim3)
+                    start()
+                }
+            }
+        } else {
+            // Classic/OLED: show horizontal indeterminate progress bar
+            val progressBar = keyboardView?.findViewById<ProgressBar>(R.id.ime_progress_bar)
+            if (progressBar != null) {
+                if (theme == "oled") {
+                    progressBar.indeterminateTintList = android.content.res.ColorStateList.valueOf(
+                        android.graphics.Color.parseColor("#7FFFCB")
+                    )
+                } else {
+                    progressBar.indeterminateTintList = android.content.res.ColorStateList.valueOf(
+                        ContextCompat.getColor(this, R.color.primary)
+                    )
+                }
+                progressBar.visibility = View.VISIBLE
+            }
+            btnMic?.let { mic ->
+                transcribingAnimator = ObjectAnimator.ofFloat(mic, "alpha", 1.0f, 0.4f).apply {
+                    duration = 600
+                    repeatMode = ValueAnimator.REVERSE
+                    repeatCount = ValueAnimator.INFINITE
+                    start()
+                }
             }
         }
     }
@@ -631,6 +821,12 @@ class OpenFreeIME : InputMethodService() {
         transcribingAnimator?.cancel()
         transcribingAnimator = null
         btnMic?.alpha = 1.0f
+
+        dotsAnimator?.cancel()
+        dotsAnimator = null
+        keyboardView?.findViewById<View>(R.id.layout_dots)?.visibility = View.GONE
+
+        keyboardView?.findViewById<ProgressBar>(R.id.ime_progress_bar)?.visibility = View.GONE
     }
 
     private fun openSettings() {
@@ -638,6 +834,193 @@ class OpenFreeIME : InputMethodService() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivity(intent)
+    }
+
+    private fun applyTheme() {
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        val root = keyboardView?.findViewById<View>(R.id.keyboard_root) ?: return
+        val density = resources.displayMetrics.density
+
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            window?.window?.setBackgroundBlurRadius(0)
+        }
+
+        resetKeysStyle()
+
+        when (theme) {
+            "classic" -> {
+                root.setBackgroundColor(ContextCompat.getColor(this, R.color.surface))
+                applyClassicKeysStyle()
+            }
+            "frosted" -> {
+                val isPowerSave = (getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager)?.isPowerSaveMode ?: false
+                if (android.os.Build.VERSION.SDK_INT >= 31 && !isPowerSave) {
+                    val radius = prefs.getInt("pref_key_blur_radius", 20)
+                    window?.window?.setBackgroundBlurRadius(radius)
+                    root.setBackgroundColor(android.graphics.Color.parseColor("#8C18161E"))
+                } else {
+                    root.setBackgroundColor(ContextCompat.getColor(this, R.color.surface_container))
+                }
+                applyFrostedKeysStyle()
+            }
+            "oled" -> {
+                root.setBackgroundColor(android.graphics.Color.parseColor("#000000"))
+                applyOledKeysStyle()
+            }
+        }
+        applyMicStyle(if (isRecording) MicState.RECORDING else if (isTranscribing) MicState.TRANSCRIBING else MicState.IDLE)
+    }
+
+    private fun resetKeysStyle() {
+        val root = keyboardView?.findViewById<ViewGroup>(R.id.keyboard_root) ?: return
+        resetKeysStyleRecursive(root)
+    }
+
+    private fun resetKeysStyleRecursive(viewGroup: ViewGroup) {
+        val density = resources.displayMetrics.density
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                resetKeysStyleRecursive(child)
+            } else if (child is Button) {
+                child.background = ContextCompat.getDrawable(this, R.drawable.key_bg)
+                child.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                child.elevation = 2 * density
+                child.alpha = 1.0f
+            } else if (child is ImageButton) {
+                if (child.id != R.id.btn_mic) {
+                    child.background = ContextCompat.getDrawable(this, R.drawable.key_bg)
+                    child.imageTintList = null
+                    child.setColorFilter(ContextCompat.getColor(this, R.color.text_primary), PorterDuff.Mode.SRC_IN)
+                    child.elevation = 2 * density
+                    child.alpha = 1.0f
+                }
+            }
+        }
+    }
+
+    private fun applyClassicKeysStyle() {
+        // XML defaults
+    }
+
+    private fun applyFrostedKeysStyle() {
+        val root = keyboardView?.findViewById<ViewGroup>(R.id.keyboard_root) ?: return
+        applyFrostedKeysStyleRecursive(root)
+    }
+
+    private fun applyFrostedKeysStyleRecursive(viewGroup: ViewGroup) {
+        val density = resources.displayMetrics.density
+        val radius = 10 * density
+        val textColors = ContextCompat.getColorStateList(this@OpenFreeIME, R.color.key_text_color_frosted)
+
+        fun makeNormalBg() = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(android.graphics.Color.argb((255 * 0.08).toInt(), 255, 255, 255))
+            setStroke((1 * density).toInt(), android.graphics.Color.argb((255 * 0.12).toInt(), 255, 255, 255))
+        }
+        fun makePressedBg() = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(android.graphics.Color.argb((255 * 0.18).toInt(), 255, 255, 255))
+            setStroke((1 * density).toInt(), ContextCompat.getColor(this@OpenFreeIME, R.color.primary))
+        }
+
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                applyFrostedKeysStyleRecursive(child)
+            } else if (child is Button) {
+                val states = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_pressed), makePressedBg())
+                    addState(intArrayOf(), makeNormalBg())
+                }
+                child.background = states
+                child.setTextColor(textColors)
+                child.elevation = 0f
+            } else if (child is ImageButton) {
+                if (child.id != R.id.btn_mic) {
+                    val states = android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_pressed), makePressedBg())
+                        addState(intArrayOf(), makeNormalBg())
+                    }
+                    child.background = states
+                    child.imageTintList = textColors
+                    child.elevation = 0f
+                }
+            }
+        }
+    }
+
+    private fun applyOledKeysStyle() {
+        val root = keyboardView?.findViewById<ViewGroup>(R.id.keyboard_root) ?: return
+        applyOledKeysStyleRecursive(root)
+    }
+
+    private fun applyOledKeysStyleRecursive(viewGroup: ViewGroup) {
+        val density = resources.displayMetrics.density
+        val radius = 7 * density
+
+        fun makeNormalBg() = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(android.graphics.Color.parseColor("#121212"))
+            setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#2A2A2A"))
+        }
+        fun makePressedBg() = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(android.graphics.Color.parseColor("#EDEDED"))
+        }
+
+        val textColors = android.content.res.ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
+            intArrayOf(android.graphics.Color.BLACK, android.graphics.Color.WHITE)
+        )
+
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                applyOledKeysStyleRecursive(child)
+            } else if (child is Button) {
+                val states = android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_pressed), makePressedBg())
+                    addState(intArrayOf(), makeNormalBg())
+                }
+                child.background = states
+                child.setTextColor(textColors)
+                child.elevation = 0f
+            } else if (child is ImageButton) {
+                if (child.id != R.id.btn_mic) {
+                    val states = android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_pressed), makePressedBg())
+                        addState(intArrayOf(), makeNormalBg())
+                    }
+                    child.background = states
+                    child.imageTintList = textColors
+                    child.elevation = 0f
+                }
+            }
+        }
+    }
+
+    private fun setLetterKeysAlpha(alpha: Float) {
+        val layoutQwerty = keyboardView?.findViewById<ViewGroup>(R.id.layout_qwerty) ?: return
+        setViewGroupKeysAlpha(layoutQwerty, alpha)
+    }
+
+    private fun setViewGroupKeysAlpha(viewGroup: ViewGroup, alpha: Float) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            if (child is ViewGroup) {
+                setViewGroupKeysAlpha(child, alpha)
+            } else if (child is Button) {
+                val txt = child.text.toString()
+                if (txt.length == 1 && txt[0].isLetter()) {
+                    child.alpha = alpha
+                }
+            }
+        }
     }
 
     // ── JNI legacy stub ────────────────────────────────────────────────────────

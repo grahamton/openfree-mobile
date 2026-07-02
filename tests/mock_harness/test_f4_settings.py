@@ -215,5 +215,32 @@ class TestSettingsAndDownloader(unittest.TestCase):
         self.assertFalse(os.path.exists(dest_path))
         self.assertFalse(os.path.exists(temp_path), "Temp download file was not cleaned up!")
 
+    def test_themes_and_contrast_settings(self):
+        # Default theme and contrast
+        theme = self.prefs.getString("pref_key_theme", "classic")
+        contrast = self.prefs.getString("pref_key_contrast", "standard")
+        self.assertEqual(theme, "classic")
+        self.assertEqual(contrast, "standard")
+
+        # Set custom values
+        self.prefs.putString("pref_key_theme", "frosted")
+        self.prefs.putString("pref_key_contrast", "high")
+        self.assertEqual(self.prefs.getString("pref_key_theme", "classic"), "frosted")
+        self.assertEqual(self.prefs.getString("pref_key_contrast", "standard"), "high")
+
+        self.prefs.putString("pref_key_theme", "oled")
+        self.prefs.putString("pref_key_contrast", "medium")
+        self.assertEqual(self.prefs.getString("pref_key_theme", "classic"), "oled")
+        self.assertEqual(self.prefs.getString("pref_key_contrast", "standard"), "medium")
+
+    def test_frosted_glass_blur_radius(self):
+        # Retrieve default or fallback
+        blur_radius = self.prefs.prefs.get("pref_key_blur_radius", 20)
+        self.assertEqual(blur_radius, 20)
+
+        # Update and verify
+        self.prefs.prefs["pref_key_blur_radius"] = 35
+        self.assertEqual(self.prefs.prefs.get("pref_key_blur_radius", 20), 35)
+
 if __name__ == "__main__":
     unittest.main()

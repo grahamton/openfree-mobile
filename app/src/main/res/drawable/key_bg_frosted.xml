@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frosted Glass theme key background selector -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#2EFFFFFF" /><!-- 18% white -->
+            <corners android:radius="10dp" />
+            <stroke android:width="1dp" android:color="#D0BCFF" /><!-- accent border -->
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#1EFFFFFF" /><!-- 12% white -->
+            <corners android:radius="10dp" />
+            <stroke android:width="1dp" android:color="#D0BCFF" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#14FFFFFF" /><!-- 8% white -->
+            <corners android:radius="10dp" />
+            <stroke android:width="1dp" android:color="#1EFFFFFF" /><!-- 12% white border -->
+        </shape>
+    </item>
+</selector>

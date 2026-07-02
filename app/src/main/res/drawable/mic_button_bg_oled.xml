@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Rounded rectangle shape for idle floating mic button (morphable) -->
+<!-- OLED High-Contrast theme spacebar/mic button background -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <corners android:radius="28dp" />
-            <solid android:color="#EADDFF" />
+            <solid android:color="#7FFFCB" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="28dp" />
-            <solid android:color="#6750A4" />
+            <solid android:color="#000000" />
+            <corners android:radius="8dp" />
+            <stroke android:width="1dp" android:color="#EDEDED" />
         </shape>
     </item>
 </selector>
