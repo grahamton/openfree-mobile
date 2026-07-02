@@ -84,6 +84,11 @@ OpenFreeIME (InputMethodService) -> commitText -> Active Input Connection
 4. **Choose Your Mode:**
    - **Hybrid Keyboard (IME)**: Go to Android Settings -> System -> Languages & Input -> On-screen keyboard -> Manage keyboards, and enable **OpenFree Voice Input**. Tap a text field, switch keyboard to OpenFree, and use the Voice/QWERTY spacebar triggers.
    - **Floating Assist Widget (Overlay)**: Tap **Enable Floating Widget** inside OpenFree Settings. In Android Accessibility settings, turn on **OpenFree Floating Assist**. A movable mic bubble will float on top of other apps (including Gboard). Tap the bubble to talk, and tap again to type!
+5. **Key Controls & Gestures:**
+   - **Spacebar Dictation:** In IME mode, long-press the spacebar (hold for >400ms) to start voice recording. A quick tap inserts a normal space without triggering transcription.
+   - **Backspace Key:** Functions like the stock Android keyboard, deleting a single character per tap.
+   - **Floating Pill Visibility:** The floating mic widget is privacy-conscious and is only visible when an input text field is actively focused.
+   - **Voice Match Coexistence:** The audio engine uses the `VOICE_RECOGNITION` source, preserving system "Okay Google" wake-word detection while using the keyboard.
 
 ---
 

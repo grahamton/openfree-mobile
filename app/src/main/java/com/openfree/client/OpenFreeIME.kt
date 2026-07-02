@@ -68,6 +68,7 @@ class OpenFreeIME : InputMethodService() {
     @Volatile
     private var discardNextTranscription = false
     private var touchStartTime = 0L
+    private var spacebarRunnable: Runnable? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -90,31 +91,33 @@ class OpenFreeIME : InputMethodService() {
         txtPreview  = view.findViewById(R.id.txt_preview)
         pulseRing   = view.findViewById(R.id.mic_pulse_ring)
 
-        // ── Voice-Integrated Spacebar Controls (Push-to-Talk) ──
+        // ── Voice-Integrated Spacebar Controls (Push-to-Talk with Long Press) ──
         btnMic?.setOnTouchListener { v, event ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    if (!isRecording && !isTranscribing) {
-                        touchStartTime = System.currentTimeMillis()
-                        discardNextTranscription = false
-                        startRecording()
+                    touchStartTime = System.currentTimeMillis()
+                    discardNextTranscription = false
+                    spacebarRunnable = Runnable {
+                        if (!isRecording && !isTranscribing) {
+                            startRecording()
+                        }
                     }
+                    mainHandler.postDelayed(spacebarRunnable!!, 400L) // 400ms long press threshold
                     v.performClick()
                     true
                 }
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    spacebarRunnable?.let {
+                        mainHandler.removeCallbacks(it)
+                    }
+                    spacebarRunnable = null
+
                     if (isRecording) {
-                        val duration = System.currentTimeMillis() - touchStartTime
-                        if (duration < 300) {
-                            // Quick tap -> discard recording & type a space instead
-                            discardNextTranscription = true
-                            stopAndTranscribe()
-                            val ic = currentInputConnection
-                            ic?.commitText(" ", 1)
-                        } else {
-                            // Long hold -> stop recording & run transcription
-                            stopAndTranscribe()
-                        }
+                        stopAndTranscribe()
+                    } else {
+                        // Quick tap -> just commit space, never started recording
+                        val ic = currentInputConnection
+                        ic?.commitText(" ", 1)
                     }
                     true
                 }
@@ -267,6 +270,14 @@ class OpenFreeIME : InputMethodService() {
         whisperEngine.unloadModel()
     }
 
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        return false
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        return false
+    }
+
     // ── Model loading ──────────────────────────────────────────────────────────
 
     private fun reloadModel() {
@@ -364,8 +375,10 @@ class OpenFreeIME : InputMethodService() {
                 setupQwertyKeys(child)
             } else if (child is Button) {
                 // Ensure we skipenter or shift special action keys if needed, or bind them
-                child.setOnClickListener {
-                    handleKeyClick(child.text.toString())
+                if (child.id != R.id.key_backspace) {
+                    child.setOnClickListener {
+                        handleKeyClick(child.text.toString())
+                    }
                 }
             }
         }

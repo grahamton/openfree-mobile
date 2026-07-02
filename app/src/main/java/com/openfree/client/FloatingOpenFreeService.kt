@@ -48,8 +48,6 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var btnFloatingMic: ImageButton? = null
-    private var pulseRing: View? = null
-    private var pulseAnimator: AnimatorSet? = null
     private var transcribingAnimator: ObjectAnimator? = null
     private var windowParams: WindowManager.LayoutParams? = null
 
@@ -81,7 +79,6 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         floatingView = LayoutInflater.from(this).inflate(R.layout.floating_layout, null)
 
         btnFloatingMic = floatingView.findViewById(R.id.btn_floating_mic)
-        pulseRing = floatingView.findViewById(R.id.floating_pulse_ring)
 
         // Overlay layout parameters using specialized accessibility overlay type
         val params = WindowManager.LayoutParams(
@@ -201,6 +198,13 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
             }
         }
 
+        val initialFocused = findFocusedInput()
+        floatingView.visibility = if (initialFocused != null) {
+            initialFocused.recycle()
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         windowManager.addView(floatingView, params)
         Log.i(TAG, "Floating speech overlay successfully initialized")
     }
@@ -214,13 +218,18 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         if (currentState == State.RECORDING) {
             audioRecorder.stopRecording()
         }
-        stopPulseAnimation()
-        stopTranscribingAnimation()
+        stopBlinkingAnimation()
         whisperEngine.unloadModel()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Accessibility events tracking is not needed for overlay layout
+        val focusedNode = findFocusedInput()
+        if (focusedNode != null) {
+            floatingView.visibility = View.VISIBLE
+            focusedNode.recycle()
+        } else {
+            floatingView.visibility = View.GONE
+        }
     }
 
     override fun onInterrupt() {
@@ -254,7 +263,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         currentState = State.RECORDING
         applyMicStyle(State.RECORDING)
         performHaptic()
-        startPulseAnimation()
+
 
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
@@ -265,7 +274,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         currentState = State.TRANSCRIBING
         applyMicStyle(State.TRANSCRIBING)
         performHaptic()
-        stopPulseAnimation()
+
 
         Thread {
             audioRecorder.stopRecording()
@@ -333,13 +342,24 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
             }
 
             // Fallback for API < 33, or if connection was null
-            val currentText = focusedNode.text ?: ""
+            val hintText = focusedNode.hintText?.toString()
+            var currentText = focusedNode.text?.toString() ?: ""
+            if ((hintText != null && currentText == hintText) || 
+                currentText == "RCS message" || 
+                currentText == "Text message" || 
+                currentText == "Type a message") {
+                currentText = ""
+            }
+
             val start = focusedNode.textSelectionStart
             val end = focusedNode.textSelectionEnd
             val newText: String
             val newCursorPos: Int
 
-            if (start >= 0 && end >= 0) {
+            if (currentText.isEmpty()) {
+                newText = text
+                newCursorPos = text.length
+            } else if (start >= 0 && end >= 0) {
                 val startClamped = minOf(start, currentText.length)
                 val endClamped = minOf(end, currentText.length)
                 val before = currentText.substring(0, startClamped)
@@ -420,7 +440,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                     ContextCompat.getColor(this, R.color.on_primary),
                     PorterDuff.Mode.SRC_IN
                 )
-                stopTranscribingAnimation()
+                stopBlinkingAnimation()
             }
             State.RECORDING -> {
                 btnFloatingMic!!.backgroundTintList = null
@@ -430,7 +450,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                     ContextCompat.getColor(this, R.color.on_secondary),
                     PorterDuff.Mode.SRC_IN
                 )
-                stopTranscribingAnimation()
+                startBlinkingAnimation()
             }
             State.TRANSCRIBING -> {
                 btnFloatingMic!!.setBackgroundResource(R.drawable.floating_mic_bg)
@@ -442,48 +462,13 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                     ContextCompat.getColor(this, R.color.on_primary),
                     PorterDuff.Mode.SRC_IN
                 )
-                startTranscribingAnimation()
+                startBlinkingAnimation()
             }
         }
     }
 
-    private fun startPulseAnimation() {
-        val ring = pulseRing ?: return
-        ring.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            ContextCompat.getColor(this, R.color.secondary_container)
-        )
-        ring.visibility = View.VISIBLE
-        ring.alpha = 0.6f
-        ring.scaleX = 1.0f
-        ring.scaleY = 1.0f
-
-        val scaleX = ObjectAnimator.ofFloat(ring, "scaleX", 1.0f, 1.4f)
-        val scaleY = ObjectAnimator.ofFloat(ring, "scaleY", 1.0f, 1.4f)
-        val alpha = ObjectAnimator.ofFloat(ring, "alpha", 0.6f, 0.0f)
-
-        scaleX.repeatCount = ValueAnimator.INFINITE
-        scaleX.repeatMode = ValueAnimator.RESTART
-        scaleY.repeatCount = ValueAnimator.INFINITE
-        scaleY.repeatMode = ValueAnimator.RESTART
-        alpha.repeatCount = ValueAnimator.INFINITE
-        alpha.repeatMode = ValueAnimator.RESTART
-
-        pulseAnimator = AnimatorSet().apply {
-            playTogether(scaleX, scaleY, alpha)
-            duration = 1200
-            start()
-        }
-    }
-
-    private fun stopPulseAnimation() {
-        pulseAnimator?.cancel()
-        pulseAnimator = null
-        pulseRing?.alpha = 0.0f
-        pulseRing?.visibility = View.GONE
-    }
-
-    private fun startTranscribingAnimation() {
-        stopTranscribingAnimation()
+    private fun startBlinkingAnimation() {
+        stopBlinkingAnimation()
         btnFloatingMic?.let { mic ->
             transcribingAnimator = ObjectAnimator.ofFloat(mic, "alpha", 1.0f, 0.4f).apply {
                 duration = 600
@@ -494,7 +479,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         }
     }
 
-    private fun stopTranscribingAnimation() {
+    private fun stopBlinkingAnimation() {
         transcribingAnimator?.cancel()
         transcribingAnimator = null
         btnFloatingMic?.alpha = 1.0f

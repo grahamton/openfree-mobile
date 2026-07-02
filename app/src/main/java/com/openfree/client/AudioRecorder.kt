@@ -63,8 +63,9 @@ class AudioRecorder {
         val bufSize = maxOf(minBuf * 4, 8192)
 
         @Suppress("MissingPermission") // Permission checked before IME is enabled
+        // Switched from MediaRecorder.AudioSource.MIC to MediaRecorder.AudioSource.VOICE_RECOGNITION for Okay Google
         val record = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
             CHANNEL_CONFIG,
             AUDIO_FORMAT,
