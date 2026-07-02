@@ -171,6 +171,34 @@ class OpenFreeIME : InputMethodService() {
         // Setup QWERTY keys recursively (Row 1-3 keys)
         setupQwertyKeys(layoutQwerty as ViewGroup)
 
+        // Setup repeating backspace on long-press
+        val btnBackspace = view.findViewById<Button>(R.id.key_backspace)
+        var backspaceRunnable: Runnable? = null
+        btnBackspace?.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    handleKeyClick("⌫")
+                    v.performClick()
+                    backspaceRunnable = object : Runnable {
+                        override fun run() {
+                            handleKeyClick("⌫")
+                            mainHandler.postDelayed(this, 100)
+                        }
+                    }
+                    mainHandler.postDelayed(backspaceRunnable!!, 400)
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (backspaceRunnable != null) {
+                        mainHandler.removeCallbacks(backspaceRunnable!!)
+                        backspaceRunnable = null
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
         // Setup Dictionary Add Panel actions
         editDictWrong = view.findViewById(R.id.edit_dict_wrong)
         editDictCorrect = view.findViewById(R.id.edit_dict_correct)
