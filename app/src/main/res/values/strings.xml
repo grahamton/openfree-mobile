@@ -29,4 +29,8 @@
     <string name="section_network">Network</string>
     <string name="section_about">About</string>
     <string name="about_version">OpenFree v1.0 — Offline Voice Dictation</string>
+
+    <!-- Floating Assist Service -->
+    <string name="floating_service_name">OpenFree Floating Assist</string>
+    <string name="floating_service_description">Provides an offline-first floating microphone overlay to dictate directly into any app using Gboard.</string>
 </resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Floating speech overlay layout -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floating_root"
+    android:layout_width="76dp"
+    android:layout_height="76dp"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <!-- Pulsing ring view behind the circular button -->
+    <View
+        android:id="@+id/floating_pulse_ring"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/pulse_ring"
+        android:visibility="gone" />
+
+    <!-- Circular Speech Trigger Button -->
+    <ImageButton
+        android:id="@+id/btn_floating_mic"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/mic_button_bg"
+        android:src="@drawable/ic_mic"
+        android:scaleType="center"
+        android:tint="#FFFFFF"
+        android:elevation="6dp"
+        android:contentDescription="OpenFree Floating Dictation" />
+</FrameLayout>

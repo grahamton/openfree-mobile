@@ -39,5 +39,19 @@
             </intent-filter>
         </service>
 
+        <!-- Accessibility Floating Assist Service -->
+        <service
+            android:name=".FloatingOpenFreeService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="@string/floating_service_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/floating_service_config" />
+        </service>
+
     </application>
 </manifest>

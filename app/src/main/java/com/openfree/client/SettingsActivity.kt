@@ -1,11 +1,15 @@
 package com.openfree.client
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.text.TextUtils
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -46,6 +50,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtDownloadStatus: TextView
     private lateinit var txtDictionaryList: TextView
     private lateinit var btnClearDictionary: Button
+    private lateinit var btnToggleFloating: Button
 
     // ── State ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +84,7 @@ class SettingsActivity : AppCompatActivity() {
         txtDownloadStatus  = findViewById(R.id.txt_download_status)
         txtDictionaryList  = findViewById(R.id.txt_dictionary_list)
         btnClearDictionary = findViewById(R.id.btn_clear_dictionary)
+        btnToggleFloating  = findViewById(R.id.btn_toggle_floating_service)
 
         // Restore saved preferences
         editModelPath.setText(prefs.getString(OpenFreeIME.KEY_MODEL_PATH, ""))
@@ -87,9 +93,50 @@ class SettingsActivity : AppCompatActivity() {
         btnSave.setOnClickListener { saveSettings() }
         btnDownload.setOnClickListener { downloadModel() }
         btnClearDictionary.setOnClickListener { clearDictionary() }
+        btnToggleFloating.setOnClickListener {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+        }
 
         updateDictionaryDisplay()
         checkAndRequestPermissions()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateFloatingServiceButtonState()
+    }
+
+    private fun updateFloatingServiceButtonState() {
+        if (isAccessibilityServiceEnabled()) {
+            btnToggleFloating.text = "Disable Floating Widget (Manage)"
+            btnToggleFloating.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.border_focus)
+            )
+        } else {
+            btnToggleFloating.text = "Enable Floating Widget"
+            btnToggleFloating.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.primary)
+            )
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedComponentName = ComponentName(this, FloatingOpenFreeService::class.java)
+        val enabledServicesSetting = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val colonSplitter = TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServicesSetting)
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledService = ComponentName.unflattenFromString(componentNameString)
+            if (enabledService != null && enabledService == expectedComponentName) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun checkAndRequestPermissions() {
