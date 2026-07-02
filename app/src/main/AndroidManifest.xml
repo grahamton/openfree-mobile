@@ -13,6 +13,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.OpenFree">
 
+        <property
+            android:name="android.app.appfunctions.app_metadata"
+            android:resource="@xml/app_metadata" />
+
         <!-- App Settings & Downloader UI -->
         <activity
             android:name=".SettingsActivity"

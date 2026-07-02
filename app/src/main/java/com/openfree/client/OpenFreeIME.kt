@@ -77,7 +77,6 @@ class OpenFreeIME : InputMethodService() {
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         audioRecorder = AudioRecorder()
         whisperEngine = WhisperEngine(applicationContext)
-        reloadModel()
     }
 
     override fun onCreateInputView(): View {
@@ -259,6 +258,8 @@ class OpenFreeIME : InputMethodService() {
         if (isRecording) {
             stopAndTranscribe()
         }
+        whisperEngine.unloadModel()
+        loadedModelPath = null
     }
 
     override fun onDestroy() {

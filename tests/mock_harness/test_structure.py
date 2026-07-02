@@ -344,6 +344,25 @@ class TestTier4E2EScenarios(unittest.TestCase):
         content = read(repo("app/src/main/cpp/CMakeLists.txt"))
         self.assertIn("whisper.cpp", content)
 
+    def test_scenario_target_sdk_is_37(self):
+        """Scenario: app build.gradle.kts targets API 37 (Android 17)."""
+        content = read(repo("app/build.gradle.kts"))
+        self.assertIn("compileSdk = 37", content)
+        self.assertIn("targetSdk = 37", content)
+
+    def test_scenario_app_metadata_exists(self):
+        """Scenario: AppFunctions metadata XML exists and is registered."""
+        self.assertTrue(os.path.isfile(repo("app/src/main/res/xml/app_metadata.xml")))
+        manifest = read(repo("app/src/main/AndroidManifest.xml"))
+        self.assertIn("android.app.appfunctions.app_metadata", manifest)
+
+    def test_scenario_dictionary_app_functions_exists(self):
+        """Scenario: AppFunctions implementation class exists."""
+        self.assertTrue(os.path.isfile(repo("app/src/main/java/com/openfree/client/DictionaryAppFunctions.kt")))
+        content = read(repo("app/src/main/java/com/openfree/client/DictionaryAppFunctions.kt"))
+        self.assertIn("@AppFunction", content)
+        self.assertIn("addDictionaryCorrection", content)
+
     def test_scenario_download_saves_model_path_to_prefs(self):
         """Scenario: after download, model path written to SharedPreferences."""
         content = read(repo("app/src/main/java/com/openfree/client/SettingsActivity.kt"))

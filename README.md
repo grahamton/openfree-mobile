@@ -46,7 +46,8 @@ OpenFreeIME (InputMethodService) -> commitText -> Active Input Connection
 ## Prerequisites
 
 - **JDK:** OpenJDK 17 or higher
-- **Android SDK:** API Level 29+ (Targeting API 35)
+- **Android SDK:** API Level 29+ (Targeting API 37 - Android 17 Cinnamon Bun)
+- **Kotlin / Gradle:** Kotlin `2.0.0` / AGP `8.9.1`
 - **Android NDK:** `26.1.10909125`
 - **CMake:** `3.22.1`
 
@@ -103,10 +104,10 @@ python tests/run_tests.py --mode mock
 
 ## Play Store Publishing & Release Signing
 
-This project is prepared for Google Play Store publishing. See the [store_listing/README.md](store_listing/README.md) directory for details on:
-1. Setting up release signing keys via `keystore.properties`.
-2. Building the production App Bundle (`.aab`) with `./gradlew bundleRelease`.
-3. Closed Testing track setup on Google Play Console (20-tester rule).
+This project is prepared for Google Play Store publishing.
+* For step-by-step guidance on setting up release signing, compiling the `.aab` package, and preparing testing tracks, see [release_handoff.md](release_handoff.md).
+* For detailed documentation on Android 17 platform features, AppFunctions integration, and local permission compliance, see [android17_research.md](android17_research.md).
+* For store listing assets, see the [store_listing/README.md](store_listing/README.md) folder.
 
 ---
 

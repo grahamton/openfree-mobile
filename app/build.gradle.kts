@@ -4,6 +4,7 @@ import java.io.FileInputStream
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -18,7 +19,7 @@ if (hasKeystore) {
 
 android {
     namespace = "com.openfree.client"
-    compileSdk = 35 // Support target SDK 35 (Android 15)
+    compileSdk = 37 // Support target SDK 37 (Android 17)
     ndkVersion = "26.1.10909125" // Explicit NDK version recommendation
 
     signingConfigs {
@@ -38,7 +39,7 @@ android {
     defaultConfig {
         applicationId = "com.openfree.client"
         minSdk = 29 // Android 10 (Q) - required for modern features and NDK support
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
 
@@ -93,9 +94,18 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    ksp {
+        arg("appfunctions:aggregateAppFunctions", "true")
+    }
 }
 
 dependencies {
+    // AppFunctions support for Android 17
+    implementation("androidx.appfunctions:appfunctions:1.0.0-alpha08")
+    implementation("androidx.appfunctions:appfunctions-service:1.0.0-alpha08")
+    ksp("androidx.appfunctions:appfunctions-compiler:1.0.0-alpha08")
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.12.0")
