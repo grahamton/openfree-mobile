@@ -56,6 +56,9 @@ class OpenFreeIME : InputMethodService() {
     private var isShifted = false
     private var keyboardView: View? = null
     private var pulseAnimator: android.animation.AnimatorSet? = null
+    @Volatile
+    private var discardNextTranscription = false
+    private var touchStartTime = 0L
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -78,24 +81,36 @@ class OpenFreeIME : InputMethodService() {
         txtPreview  = view.findViewById(R.id.txt_preview)
         pulseRing   = view.findViewById(R.id.mic_pulse_ring)
 
-        // ── Voice-Integrated Spacebar Controls ──
-        btnMic?.setOnClickListener {
-            if (isRecording || isTranscribing) {
-                // If active, tap stops recording and transcribes
-                toggleRecording()
-            } else {
-                // If idle, tap commits a space character
-                val ic = currentInputConnection ?: return@setOnClickListener
-                ic.commitText(" ", 1)
+        // ── Voice-Integrated Spacebar Controls (Push-to-Talk) ──
+        btnMic?.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    if (!isRecording && !isTranscribing) {
+                        touchStartTime = System.currentTimeMillis()
+                        discardNextTranscription = false
+                        startRecording()
+                    }
+                    v.performClick()
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (isRecording) {
+                        val duration = System.currentTimeMillis() - touchStartTime
+                        if (duration < 300) {
+                            // Quick tap -> discard recording & type a space instead
+                            discardNextTranscription = true
+                            stopAndTranscribe()
+                            val ic = currentInputConnection
+                            ic?.commitText(" ", 1)
+                        } else {
+                            // Long hold -> stop recording & run transcription
+                            stopAndTranscribe()
+                        }
+                    }
+                    true
+                }
+                else -> false
             }
-        }
-
-        btnMic?.setOnLongClickListener {
-            if (!isRecording && !isTranscribing) {
-                // Long press triggers active voice dictation
-                startRecording()
-            }
-            true
         }
 
         btnSettings?.setOnClickListener { openSettings() }
@@ -259,6 +274,16 @@ class OpenFreeIME : InputMethodService() {
     }
 
     private fun onSamplesReady(samples: FloatArray) {
+        if (discardNextTranscription) {
+            discardNextTranscription = false
+            mainHandler.post {
+                isTranscribing = false
+                txtPreview?.text = ""
+                setIdleState()
+            }
+            return
+        }
+
         if (samples.isEmpty()) {
             mainHandler.post {
                 isTranscribing = false
