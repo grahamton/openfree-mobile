@@ -48,6 +48,8 @@ class OpenFreeIME : InputMethodService() {
     private var txtStatus: TextView? = null
     private var txtPreview: TextView? = null
     private var pulseRing: View? = null
+    private var editDictWrong: EditText? = null
+    private var editDictCorrect: EditText? = null
 
     // ── State ──────────────────────────────────────────────────────────────────
 
@@ -170,18 +172,21 @@ class OpenFreeIME : InputMethodService() {
         setupQwertyKeys(layoutQwerty as ViewGroup)
 
         // Setup Dictionary Add Panel actions
-        val editWrong = view.findViewById<EditText>(R.id.edit_dict_wrong)
-        val editCorrect = view.findViewById<EditText>(R.id.edit_dict_correct)
+        editDictWrong = view.findViewById(R.id.edit_dict_wrong)
+        editDictCorrect = view.findViewById(R.id.edit_dict_correct)
+        editDictWrong?.showSoftInputOnFocus = false
+        editDictCorrect?.showSoftInputOnFocus = false
+
         val btnDictSave = view.findViewById<Button>(R.id.btn_dict_save)
         val btnDictCancel = view.findViewById<Button>(R.id.btn_dict_cancel)
 
         btnDictSave?.setOnClickListener {
-            val wrong = editWrong?.text?.toString() ?: ""
-            val correct = editCorrect?.text?.toString() ?: ""
+            val wrong = editDictWrong?.text?.toString() ?: ""
+            val correct = editDictCorrect?.text?.toString() ?: ""
             if (wrong.isNotBlank() && correct.isNotBlank()) {
                 addDictionaryItem(wrong, correct)
-                editWrong.setText("")
-                editCorrect.setText("")
+                editDictWrong?.setText("")
+                editDictCorrect?.setText("")
                 layoutDict.visibility = View.GONE
                 btnTabDict?.setColorFilter(
                     ContextCompat.getColor(this, R.color.text_primary),
@@ -191,8 +196,8 @@ class OpenFreeIME : InputMethodService() {
         }
 
         btnDictCancel?.setOnClickListener {
-            editWrong?.setText("")
-            editCorrect?.setText("")
+            editDictWrong?.setText("")
+            editDictCorrect?.setText("")
             layoutDict.visibility = View.GONE
             btnTabDict?.setColorFilter(
                 ContextCompat.getColor(this, R.color.text_primary),
@@ -325,7 +330,19 @@ class OpenFreeIME : InputMethodService() {
         }
     }
 
+    private fun getFocusedInternalEditText(): EditText? {
+        if (editDictWrong?.isFocused == true) return editDictWrong
+        if (editDictCorrect?.isFocused == true) return editDictCorrect
+        return null
+    }
+
     private fun handleKeyClick(key: String) {
+        val focusedEdit = getFocusedInternalEditText()
+        if (focusedEdit != null) {
+            handleInternalKeyClick(focusedEdit, key)
+            return
+        }
+
         val ic = currentInputConnection ?: return
         when (key) {
             "⌫" -> {
@@ -345,6 +362,45 @@ class OpenFreeIME : InputMethodService() {
             else -> {
                 val textToCommit = if (isShifted) key.uppercase() else key.lowercase()
                 ic.commitText(textToCommit, 1)
+                if (isShifted) {
+                    isShifted = false
+                    toggleQwertyShift()
+                }
+            }
+        }
+    }
+
+    private fun handleInternalKeyClick(focusedEdit: EditText, key: String) {
+        val start = Math.max(focusedEdit.selectionStart, 0)
+        val end = Math.max(focusedEdit.selectionEnd, 0)
+
+        when (key) {
+            "⌫" -> {
+                if (start > 0 || end > start) {
+                    if (start == end) {
+                        focusedEdit.text.delete(start - 1, start)
+                    } else {
+                        focusedEdit.text.delete(start, end)
+                    }
+                }
+            }
+            "Space" -> {
+                focusedEdit.text.replace(start, end, " ")
+            }
+            "⏎" -> {
+                if (focusedEdit == editDictWrong) {
+                    editDictCorrect?.requestFocus()
+                } else {
+                    keyboardView?.findViewById<Button>(R.id.btn_dict_save)?.performClick()
+                }
+            }
+            "⇧" -> {
+                isShifted = !isShifted
+                toggleQwertyShift()
+            }
+            else -> {
+                val textToCommit = if (isShifted) key.uppercase() else key.lowercase()
+                focusedEdit.text.replace(start, end, textToCommit)
                 if (isShifted) {
                     isShifted = false
                     toggleQwertyShift()
