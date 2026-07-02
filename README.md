@@ -96,6 +96,16 @@ python tests/run_tests.py --mode mock
 
 ---
 
+## Play Store Publishing & Release Signing
+
+This project is prepared for Google Play Store publishing. See the [store_listing/README.md](store_listing/README.md) directory for details on:
+1. Setting up release signing keys via `keystore.properties`.
+2. Building the production App Bundle (`.aab`) with `./gradlew bundleRelease`.
+3. Closed Testing track setup on Google Play Console (20-tester rule).
+
+---
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+

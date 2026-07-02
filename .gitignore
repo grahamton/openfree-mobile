@@ -25,3 +25,8 @@ __pycache__/
 
 # Log files
 *.log
+
+# Release Secrets
+keystore.properties
+*.jks
+

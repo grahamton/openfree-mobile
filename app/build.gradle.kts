@@ -1,12 +1,39 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+val hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+} else {
+    logger.warn("Warning: keystore.properties not found in root project. Release builds will not be signed.")
+}
+
+
 android {
     namespace = "com.openfree.client"
     compileSdk = 35 // Support target SDK 35 (Android 15)
     ndkVersion = "26.1.10909125" // Explicit NDK version recommendation
+
+    signingConfigs {
+        create("release") {
+            if (hasKeystore) {
+                val storeFileVal = keystoreProperties.getProperty("storeFile")
+                if (!storeFileVal.isNullOrBlank()) {
+                    storeFile = rootProject.file(storeFileVal)
+                    storePassword = keystoreProperties.getProperty("storePassword")
+                    keyAlias = keystoreProperties.getProperty("keyAlias")
+                    keyPassword = keystoreProperties.getProperty("keyPassword")
+                }
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.openfree.client"
@@ -40,8 +67,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

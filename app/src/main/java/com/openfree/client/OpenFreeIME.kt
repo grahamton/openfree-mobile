@@ -1,5 +1,8 @@
 package com.openfree.client
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.PorterDuff
@@ -7,6 +10,7 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -16,6 +20,7 @@ import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import java.util.regex.Pattern
+
 
 /**
  * OpenFreeIME
@@ -57,7 +62,9 @@ class OpenFreeIME : InputMethodService() {
     private var isTranscribing = false
     private var isShifted = false
     private var keyboardView: View? = null
-    private var pulseAnimator: android.animation.AnimatorSet? = null
+    private var pulseAnimator: AnimatorSet? = null
+    private var transcribingAnimator: ObjectAnimator? = null
+    private var loadedModelPath: String? = null
     @Volatile
     private var discardNextTranscription = false
     private var touchStartTime = 0L
@@ -268,10 +275,13 @@ class OpenFreeIME : InputMethodService() {
             Log.w(TAG, "No model path configured. Open Settings to configure a model.")
             return
         }
-        if (whisperEngine.isModelLoaded) return // already loaded
+        if (whisperEngine.isModelLoaded && modelPath == loadedModelPath) return // already loaded
 
         Thread {
             val ok = whisperEngine.loadModel(modelPath)
+            if (ok) {
+                loadedModelPath = modelPath
+            }
             Log.i(TAG, "reloadModel: loaded=$ok path=$modelPath")
         }.start()
     }
@@ -290,6 +300,7 @@ class OpenFreeIME : InputMethodService() {
         isRecording = true
         txtPreview?.text = "Listening..."
         setRecordingState()
+        performHaptic()
 
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
@@ -302,6 +313,7 @@ class OpenFreeIME : InputMethodService() {
         isTranscribing = true
         txtPreview?.text = "Transcribing..."
         setProcessingState()
+        performHaptic()
 
         Thread { audioRecorder.stopRecording() }.start()
     }
@@ -335,6 +347,7 @@ class OpenFreeIME : InputMethodService() {
             if (trimmed.isNotEmpty()) {
                 currentInputConnection?.commitText(trimmed, /* newCursorPosition= */ 1)
                 txtPreview?.text = trimmed
+                performHaptic()
             } else {
                 txtPreview?.text = "No speech detected"
             }
@@ -488,62 +501,86 @@ class OpenFreeIME : InputMethodService() {
 
     // ── UI helpers ─────────────────────────────────────────────────────────────
 
+    enum class MicState { IDLE, RECORDING, TRANSCRIBING }
+
     private fun setIdleState() {
         txtStatus?.text = "Tap spacebar or hold to dictate"
-        applyMicStyle(recording = false)
+        applyMicStyle(MicState.IDLE)
         stopPulseAnimation()
     }
 
     private fun setRecordingState() {
         txtStatus?.text = "Listening... Speak clearly"
-        applyMicStyle(recording = true)
+        applyMicStyle(MicState.RECORDING)
         startPulseAnimation()
     }
 
     private fun setProcessingState() {
         txtStatus?.text = "Processing speech..."
-        applyMicStyle(recording = false)
+        applyMicStyle(MicState.TRANSCRIBING)
         stopPulseAnimation()
     }
 
-    private fun applyMicStyle(recording: Boolean) {
+    private fun applyMicStyle(state: MicState) {
         btnMic ?: return
-        if (recording) {
-            btnMic!!.setBackgroundResource(R.drawable.mic_button_bg_active)
-            btnMic!!.setImageResource(R.drawable.ic_stop)
-            btnMic!!.setColorFilter(
-                ContextCompat.getColor(this, R.color.on_secondary),
-                PorterDuff.Mode.SRC_IN
-            )
-        } else {
-            btnMic!!.setBackgroundResource(R.drawable.mic_button_bg)
-            btnMic!!.setImageResource(R.drawable.ic_mic)
-            btnMic!!.setColorFilter(
-                ContextCompat.getColor(this, R.color.on_primary),
-                PorterDuff.Mode.SRC_IN
-            )
+        when (state) {
+            MicState.IDLE -> {
+                btnMic!!.backgroundTintList = null
+                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg)
+                btnMic!!.setImageResource(R.drawable.ic_mic)
+                btnMic!!.setColorFilter(
+                    ContextCompat.getColor(this, R.color.on_primary),
+                    PorterDuff.Mode.SRC_IN
+                )
+                stopTranscribingAnimation()
+            }
+            MicState.RECORDING -> {
+                btnMic!!.backgroundTintList = null
+                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg_active)
+                btnMic!!.setImageResource(R.drawable.ic_stop)
+                btnMic!!.setColorFilter(
+                    ContextCompat.getColor(this, R.color.on_secondary),
+                    PorterDuff.Mode.SRC_IN
+                )
+                stopTranscribingAnimation()
+            }
+            MicState.TRANSCRIBING -> {
+                btnMic!!.setBackgroundResource(R.drawable.mic_button_bg)
+                btnMic!!.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(this, R.color.gold)
+                )
+                btnMic!!.setImageResource(R.drawable.ic_mic)
+                btnMic!!.setColorFilter(
+                    ContextCompat.getColor(this, R.color.on_primary),
+                    PorterDuff.Mode.SRC_IN
+                )
+                startTranscribingAnimation()
+            }
         }
     }
 
     private fun startPulseAnimation() {
         val ring = pulseRing ?: return
+        ring.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            ContextCompat.getColor(this, R.color.secondary_container)
+        )
         ring.visibility = View.VISIBLE
         ring.alpha = 0.6f
         ring.scaleX = 1.0f
         ring.scaleY = 1.0f
 
-        val scaleX = android.animation.ObjectAnimator.ofFloat(ring, "scaleX", 1.0f, 1.6f)
-        val scaleY = android.animation.ObjectAnimator.ofFloat(ring, "scaleY", 1.0f, 1.6f)
-        val alpha = android.animation.ObjectAnimator.ofFloat(ring, "alpha", 0.6f, 0.0f)
+        val scaleX = ObjectAnimator.ofFloat(ring, "scaleX", 1.0f, 1.6f)
+        val scaleY = ObjectAnimator.ofFloat(ring, "scaleY", 1.0f, 1.6f)
+        val alpha = ObjectAnimator.ofFloat(ring, "alpha", 0.6f, 0.0f)
 
-        scaleX.repeatCount = android.animation.ValueAnimator.INFINITE
-        scaleX.repeatMode = android.animation.ValueAnimator.RESTART
-        scaleY.repeatCount = android.animation.ValueAnimator.INFINITE
-        scaleY.repeatMode = android.animation.ValueAnimator.RESTART
-        alpha.repeatCount = android.animation.ValueAnimator.INFINITE
-        alpha.repeatMode = android.animation.ValueAnimator.RESTART
+        scaleX.repeatCount = ValueAnimator.INFINITE
+        scaleX.repeatMode = ValueAnimator.RESTART
+        scaleY.repeatCount = ValueAnimator.INFINITE
+        scaleY.repeatMode = ValueAnimator.RESTART
+        alpha.repeatCount = ValueAnimator.INFINITE
+        alpha.repeatMode = ValueAnimator.RESTART
 
-        pulseAnimator = android.animation.AnimatorSet().apply {
+        pulseAnimator = AnimatorSet().apply {
             playTogether(scaleX, scaleY, alpha)
             duration = 1200
             start()
@@ -555,6 +592,31 @@ class OpenFreeIME : InputMethodService() {
         pulseAnimator = null
         pulseRing?.alpha = 0.0f
         pulseRing?.visibility = View.GONE
+    }
+
+    private fun performHaptic() {
+        btnMic?.performHapticFeedback(
+            HapticFeedbackConstants.KEYBOARD_TAP,
+            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+        )
+    }
+
+    private fun startTranscribingAnimation() {
+        stopTranscribingAnimation()
+        btnMic?.let { mic ->
+            transcribingAnimator = ObjectAnimator.ofFloat(mic, "alpha", 1.0f, 0.4f).apply {
+                duration = 600
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
+            }
+        }
+    }
+
+    private fun stopTranscribingAnimation() {
+        transcribingAnimator?.cancel()
+        transcribingAnimator = null
+        btnMic?.alpha = 1.0f
     }
 
     private fun openSettings() {
