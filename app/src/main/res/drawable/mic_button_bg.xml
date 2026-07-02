@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Idle mic button: Material 3 Primary circle -->
+<!-- Spacebar mic button background - M3 Primary rounded rectangle -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
-        <shape android:shape="oval">
-            <solid android:color="#EADDFF" /><!-- primary_container pressed state -->
-            <size android:width="58dp" android:height="58dp" />
+        <shape android:shape="rectangle">
+            <solid android:color="#EADDFF" /><!-- primary_container -->
+            <corners android:radius="12dp" />
         </shape>
     </item>
     <item>
-        <shape android:shape="oval">
+        <shape android:shape="rectangle">
             <solid android:color="#6750A4" /><!-- primary -->
-            <size android:width="58dp" android:height="58dp" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
 </selector>

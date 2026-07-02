@@ -21,15 +21,16 @@ import java.util.regex.Pattern
  * OpenFreeIME
  *
  * The core [InputMethodService] implementation for the OpenFree offline
- * voice-dictation keyboard.
+ * voice-dictation and QWERTY keyboard.
  *
  * Flow:
- *  1. User taps mic button → [startRecording]
+ *  1. User long-presses spacebar → [startRecording]
  *  2. [AudioRecorder] captures 16 kHz mono PCM in a background thread.
- *  3. User taps mic button again → [stopAndTranscribe]
+ *  3. User taps spacebar again → [stopAndTranscribe]
  *  4. [WhisperEngine.transcribe] runs inference on the background thread.
  *  5. Result is committed via [android.view.inputmethod.InputConnection.commitText]
  *     on the main thread.
+ *  6. User taps spacebar normally → Commits space character.
  */
 class OpenFreeIME : InputMethodService() {
 
@@ -77,16 +78,32 @@ class OpenFreeIME : InputMethodService() {
         txtPreview  = view.findViewById(R.id.txt_preview)
         pulseRing   = view.findViewById(R.id.mic_pulse_ring)
 
-        btnMic?.setOnClickListener { toggleRecording() }
+        // ── Voice-Integrated Spacebar Controls ──
+        btnMic?.setOnClickListener {
+            if (isRecording || isTranscribing) {
+                // If active, tap stops recording and transcribes
+                toggleRecording()
+            } else {
+                // If idle, tap commits a space character
+                val ic = currentInputConnection ?: return@setOnClickListener
+                ic.commitText(" ", 1)
+            }
+        }
+
+        btnMic?.setOnLongClickListener {
+            if (!isRecording && !isTranscribing) {
+                // Long press triggers active voice dictation
+                startRecording()
+            }
+            true
+        }
+
         btnSettings?.setOnClickListener { openSettings() }
 
         // Setup layouts & tabs
-        val layoutVoice = view.findViewById<View>(R.id.layout_voice)
         val layoutQwerty = view.findViewById<View>(R.id.layout_qwerty)
         val layoutDict = view.findViewById<View>(R.id.layout_dictionary)
 
-        val btnTabVoice = view.findViewById<ImageButton>(R.id.btn_tab_voice)
-        val btnTabType = view.findViewById<ImageButton>(R.id.btn_tab_type)
         val btnTabDict = view.findViewById<ImageButton>(R.id.btn_tab_dict)
         val btnTabSwitch = view.findViewById<ImageButton>(R.id.btn_tab_switch)
 
@@ -96,46 +113,28 @@ class OpenFreeIME : InputMethodService() {
             txtPreview?.text = ""
         }
 
-        // Tab selection coloring helper
-        fun updateTabColors(selected: ImageButton, unselected: List<ImageButton>) {
-            selected.setColorFilter(
-                ContextCompat.getColor(this, R.color.primary),
-                PorterDuff.Mode.SRC_IN
-            )
-            for (btn in unselected) {
-                btn.setColorFilter(
-                    ContextCompat.getColor(this, R.color.text_secondary),
+        // Inline Dictionary panel toggle
+        btnTabDict?.setOnClickListener {
+            if (layoutDict.visibility == View.VISIBLE) {
+                layoutDict.visibility = View.GONE
+                btnTabDict.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_primary),
                     PorterDuff.Mode.SRC_IN
                 )
-            }
-        }
+            } else {
+                layoutDict.visibility = View.VISIBLE
+                btnTabDict.setColorFilter(
+                    ContextCompat.getColor(this, R.color.primary),
+                    PorterDuff.Mode.SRC_IN
+                )
 
-        btnTabVoice?.setOnClickListener {
-            layoutVoice.visibility = View.VISIBLE
-            layoutQwerty.visibility = View.GONE
-            layoutDict.visibility = View.GONE
-            updateTabColors(btnTabVoice, listOf(btnTabType, btnTabDict))
-        }
-
-        btnTabType?.setOnClickListener {
-            layoutVoice.visibility = View.GONE
-            layoutQwerty.visibility = View.VISIBLE
-            layoutDict.visibility = View.GONE
-            updateTabColors(btnTabType, listOf(btnTabVoice, btnTabDict))
-        }
-
-        btnTabDict?.setOnClickListener {
-            layoutVoice.visibility = View.GONE
-            layoutQwerty.visibility = View.GONE
-            layoutDict.visibility = View.VISIBLE
-            updateTabColors(btnTabDict, listOf(btnTabVoice, btnTabType))
-
-            // Pre-populate with the last word of preview
-            val prevText = txtPreview?.text?.toString() ?: ""
-            if (prevText.isNotEmpty() && prevText != getString(R.string.preview_hint)) {
-                val words = prevText.trim().split("\\s+".toRegex())
-                val lastWord = words.lastOrNull() ?: ""
-                view.findViewById<EditText>(R.id.edit_dict_wrong)?.setText(lastWord)
+                // Pre-populate with the last word of preview
+                val prevText = txtPreview?.text?.toString() ?: ""
+                if (prevText.isNotEmpty() && prevText != getString(R.string.preview_hint)) {
+                    val words = prevText.trim().split("\\s+".toRegex())
+                    val lastWord = words.lastOrNull() ?: ""
+                    view.findViewById<EditText>(R.id.edit_dict_wrong)?.setText(lastWord)
+                }
             }
         }
 
@@ -152,10 +151,10 @@ class OpenFreeIME : InputMethodService() {
             }
         }
 
-        // Setup QWERTY keys recursively
+        // Setup QWERTY keys recursively (Row 1-3 keys)
         setupQwertyKeys(layoutQwerty as ViewGroup)
 
-        // Setup Dictionary Add Panel
+        // Setup Dictionary Add Panel actions
         val editWrong = view.findViewById<EditText>(R.id.edit_dict_wrong)
         val editCorrect = view.findViewById<EditText>(R.id.edit_dict_correct)
         val btnDictSave = view.findViewById<Button>(R.id.btn_dict_save)
@@ -168,18 +167,23 @@ class OpenFreeIME : InputMethodService() {
                 addDictionaryItem(wrong, correct)
                 editWrong.setText("")
                 editCorrect.setText("")
-                btnTabVoice?.performClick()
+                layoutDict.visibility = View.GONE
+                btnTabDict?.setColorFilter(
+                    ContextCompat.getColor(this, R.color.text_primary),
+                    PorterDuff.Mode.SRC_IN
+                )
             }
         }
 
         btnDictCancel?.setOnClickListener {
             editWrong?.setText("")
             editCorrect?.setText("")
-            btnTabVoice?.performClick()
+            layoutDict.visibility = View.GONE
+            btnTabDict?.setColorFilter(
+                ContextCompat.getColor(this, R.color.text_primary),
+                PorterDuff.Mode.SRC_IN
+            )
         }
-
-        // Set default tab state
-        btnTabVoice?.performClick()
 
         setIdleState()
         return view
@@ -288,6 +292,7 @@ class OpenFreeIME : InputMethodService() {
             if (child is ViewGroup) {
                 setupQwertyKeys(child)
             } else if (child is Button) {
+                // Ensure we skipenter or shift special action keys if needed, or bind them
                 child.setOnClickListener {
                     handleKeyClick(child.text.toString())
                 }
@@ -375,19 +380,19 @@ class OpenFreeIME : InputMethodService() {
     // ── UI helpers ─────────────────────────────────────────────────────────────
 
     private fun setIdleState() {
-        txtStatus?.text = getString(R.string.status_idle)
+        txtStatus?.text = "Tap spacebar or hold to dictate"
         applyMicStyle(recording = false)
         stopPulseAnimation()
     }
 
     private fun setRecordingState() {
-        txtStatus?.text = getString(R.string.status_listening)
+        txtStatus?.text = "Listening... Speak clearly"
         applyMicStyle(recording = true)
         startPulseAnimation()
     }
 
     private fun setProcessingState() {
-        txtStatus?.text = getString(R.string.status_processing)
+        txtStatus?.text = "Processing speech..."
         applyMicStyle(recording = false)
         stopPulseAnimation()
     }
