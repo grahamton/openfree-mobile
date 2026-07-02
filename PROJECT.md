@@ -18,11 +18,14 @@ Data flow:
 - `app/src/main/cpp/CMakeLists.txt` - NDK CMake build script
 - `app/src/main/cpp/whisper-jni.cpp` - C++ JNI bridge code
 - `app/src/main/java/com/openfree/client/OpenFreeIME.kt` - InputMethodService subclass
+- `app/src/main/java/com/openfree/client/FloatingOpenFreeService.kt` - Floating overlay AccessibilityService subclass
 - `app/src/main/java/com/openfree/client/WhisperEngine.kt` - Kotlin JNI wrapper
 - `app/src/main/java/com/openfree/client/AudioRecorder.kt` - PCM recording wrapper
 - `app/src/main/java/com/openfree/client/SettingsActivity.kt` - Settings activity and HF downloader
 - `app/src/main/res/xml/method.xml` - Input Method description metadata
+- `app/src/main/res/xml/floating_service_config.xml` - Accessibility service metadata
 - `app/src/main/res/layout/keyboard_view.xml` - compact keyboard panel layout
+- `app/src/main/res/layout/floating_layout.xml` - floating speech bubble layout
 
 ## Milestones
 
@@ -35,6 +38,7 @@ Data flow:
 | M4 | Android IME Keyboard | OpenFreeIME Kotlin service implementation, Fieldwork styling keyboard UI view, commitText integrations | M2, M3 | DONE |
 | M5 | Settings & Downloader | SettingsActivity UI, preferences storage, HuggingFace model download helper | M1 | DONE |
 | M6 | E2E Verification & Hardening | Final integrations, passing all test suite tiers (1-4) and adversarial testing (Tier 5) | M2, M3, M4, M5, TEST_READY.md | DONE |
+| M7 | Floating Assist Overlay | FloatingOpenFreeService implementation (drag gestures, TYPE_ACCESSIBILITY_OVERLAY, node injection) | M2, M3, M5 | DONE |
 
 ### E2E Testing Track
 | # | Name | Scope | Dependencies | Status |

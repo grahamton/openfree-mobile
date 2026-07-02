@@ -11,6 +11,7 @@ OpenFree is an **offline-first, local voice-dictation keyboard (IME)** for Andro
 - **Adaptive Material 3 Design:** Styled using a clean Material 3 Day/Night theme that automatically adapts to system light and dark modes.
 - **Embedded QWERTY Typing Mode:** Includes a compact, built-in QWERTY typing layout to make inline text corrections and edits directly inside the IME.
 - **Quick Dictionary Corrections:** A local text-replacement dictionary (e.g. `anti gravity` -> `Antigravity`) to automatically fix recurring voice dictation typos.
+- **Floating Assist Widget overlay**: An offline-first floating speech recognition bubble that runs over any keyboard (like Gboard) using Android Accessibility Services.
 - **Hugging Face Downloader:** Integrated downloader UI inside app settings to pull the optimized `ggml-base.en-q5_1.bin` model directly from Hugging Face.
 - **Optional Remote Fallback:** Supports routing transcription queries to a custom home lab transcription server (Tailscale/LAN) with Android 17 `ACCESS_LOCAL_NETWORK` permission support.
 
@@ -80,8 +81,9 @@ OpenFreeIME (InputMethodService) -> commitText -> Active Input Connection
 1. **Open Settings:** Find and open the **OpenFree Settings** app from your launcher.
 2. **Grant Microphone Permission:** Grant the requested runtime `RECORD_AUDIO` permission.
 3. **Download Model:** Tap **Download Base EN Model** to download the ~60MB optimized quantized Whisper model from Hugging Face. Once done, tap **Save Settings**.
-4. **Enable Keyboard:** Go to Android Settings -> System -> Languages & Input -> On-screen keyboard -> Manage keyboards, and enable **OpenFree Voice Input**.
-5. **Start Dictating:** Tap any text field, switch your keyboard to **OpenFree Voice Input**, tap the mic button to start recording, speak, and tap it again to transcribe and commit.
+4. **Choose Your Mode:**
+   - **Hybrid Keyboard (IME)**: Go to Android Settings -> System -> Languages & Input -> On-screen keyboard -> Manage keyboards, and enable **OpenFree Voice Input**. Tap a text field, switch keyboard to OpenFree, and use the Voice/QWERTY spacebar triggers.
+   - **Floating Assist Widget (Overlay)**: Tap **Enable Floating Widget** inside OpenFree Settings. In Android Accessibility settings, turn on **OpenFree Floating Assist**. A movable mic bubble will float on top of other apps (including Gboard). Tap the bubble to talk, and tap again to type!
 
 ---
 
