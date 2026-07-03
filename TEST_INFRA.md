@@ -37,8 +37,7 @@ The E2E Test Infrastructure verifies the following core application features at 
 - **Scope**: Manages user configuration preferences and on-device model downloading.
 - **Boundaries**:
   - Android SharedPreferences keys:
-    - `pref_key_model_path` (default: path to `ggml-base.en-q5_1.bin` in app cache)
-    - `pref_key_remote_fallback_url` (optional home lab fallback server URL)
+    - `pref_key_model_path` (default: path to `ggml-base.en-q5_1.bin` in app files dir)
   - Downloader component for downloading models from Hugging Face offline-compliant endpoints (mocked using a local Python HTTP server).
 
 ---

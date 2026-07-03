@@ -20,7 +20,7 @@ To build a global system-wide dictation tool on Android, we must register the ap
 * **Audio Capture**: Android `AudioRecord` API capturing 16-bit PCM at 16kHz mono.
 * **On-Device STT**: `whisper.cpp` running in-process via a JNI bridge.
 * **AppFunctions Integration**: Uses `androidx.appfunctions` (alpha08+) and Kotlin Symbol Processing (KSP) to expose spelling dictionary corrections directly to on-device AI assistants (e.g., Google Gemini).
-* **Remote Fallback STT**: A simple HTTP fallback request to a local Tailscale home lab server. Requires dynamic permission checks for `android.permission.ACCESS_LOCAL_NETWORK` on API 37+ devices.
+* ~~**Remote Fallback STT**~~: *Removed in M8 — the app is now strictly offline-only; transcription never leaves the device.*
 
 ---
 
@@ -43,7 +43,7 @@ openfree-android/
 │   │   │   │   ├── OpenFreeIME.kt # Core InputMethodService (handles dynamic model caching)
 │   │   │   │   ├── WhisperEngine.kt # Kotlin JNI wrapper
 │   │   │   │   ├── DictionaryAppFunctions.kt # Exposes dictionary methods to system AI
-│   │   │   │   ├── SettingsActivity.kt # Configuration UI (handles ACCESS_LOCAL_NETWORK permission)
+│   │   │   │   ├── SettingsActivity.kt # Configuration UI (handles RECORD_AUDIO permission)
 │   │   │   │   └── AudioRecorder.kt # Handles mic input buffer
 │   │   │   └── res/
 │   │   │       ├── xml/
@@ -59,7 +59,7 @@ openfree-android/
 ## 3. Core Native Implementation Details
 
 ### AndroidManifest.xml (Permissions & Services)
-To register as a system keyboard, support local fallback networking, and declare AppFunctions:
+To register as a system keyboard and declare AppFunctions:
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.openfree.client">
@@ -67,7 +67,6 @@ To register as a system keyboard, support local fallback networking, and declare
     <!-- Permissions -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <application>
         <!-- App Metadata for AppFunctions -->

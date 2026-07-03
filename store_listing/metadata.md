@@ -32,7 +32,7 @@ KEY FEATURES:
 • Hybrid Layout: Easily switch between an animated pulsing Voice Dictation panel, a clean QWERTY typing layout for inline edits, and a quick dictionary corrections screen.
 • Customizable Corrections Dictionary: Automatically maps custom shorthand or common voice mistranscriptions to your desired words (e.g., auto-correcting "open free" to "OpenFree").
 • Dynamic Model Downloader: Download the highly optimized Whisper models (like ggml-base.en-q5_1) directly from Hugging Face on your first startup. Keeps your initial app installation size under 15 MB.
-• Local Network Fallback: Configure an optional fallback endpoint to process transcription via your self-hosted API (e.g., via Tailscale home lab) if desired.
+• No Cloud Dependency: The app has no transcription servers of any kind — once the model is downloaded, dictation works fully offline, forever.
 
 HOW TO ENABLE:
 1. Open the app and download your preferred Whisper model.
@@ -41,6 +41,6 @@ HOW TO ENABLE:
 4. Switch to OpenFree by tapping the keyboard icon in the bottom right corner when typing in any app.
 
 PERMISSIONS EXPLAINED:
-• Record Audio (android.permission.RECORD_AUDIO): Required to capture voice input for dictation. Audio samples are only used locally by the on-device model and never stored or sent over the internet unless you configure your own remote fallback endpoint.
-• Internet: Required to download the Whisper speech model from Hugging Face on first launch and optionally connect to your self-hosted fallback endpoint.
+• Record Audio (android.permission.RECORD_AUDIO): Required to capture voice input for dictation. Audio samples are only used locally by the on-device model and are never stored or sent over the internet.
+• Internet: Required only to download the Whisper speech model from Hugging Face on first launch.
 ```

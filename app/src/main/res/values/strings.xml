@@ -16,9 +16,7 @@
     <!-- Settings Activity -->
     <string name="settings_title">Settings</string>
     <string name="model_path_label">Local Model Path</string>
-    <string name="model_path_hint">/data/data/…/cache/ggml-base.en-q5_1.bin</string>
-    <string name="fallback_url_label">Remote Fallback URL (optional)</string>
-    <string name="fallback_url_hint">http://100.x.x.x:8080/transcribe</string>
+    <string name="model_path_hint">/data/data/…/files/ggml-base.en-q5_1.bin</string>
     <string name="download_model_button">Download Base EN Model (~60 MB)</string>
     <string name="save_button">Save Settings</string>
     <string name="download_progress">Downloading model…</string>
@@ -26,11 +24,11 @@
     <string name="download_failed">Download failed</string>
     <string name="settings_saved">Settings saved</string>
     <string name="section_model">Voice Model</string>
-    <string name="section_network">Network</string>
     <string name="section_about">About</string>
     <string name="about_version">OpenFree v1.0 — Offline Voice Dictation</string>
 
     <!-- Floating Assist Service -->
     <string name="floating_service_name">OpenFree Floating Assist</string>
     <string name="floating_service_description">Provides an offline-first floating microphone overlay to dictate directly into any app using Gboard.</string>
+    <string name="key_label_symbols">\?123</string>
 </resources>

@@ -21,7 +21,6 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import java.util.regex.Pattern
 
 
 /**
@@ -63,6 +62,7 @@ class OpenFreeIME : InputMethodService() {
     private var isRecording = false
     private var isTranscribing = false
     private var isShifted = false
+    private var isSymbolsLayout = false
     private var keyboardView: View? = null
     private var pulseAnimator: AnimatorSet? = null
     private var transcribingAnimator: ObjectAnimator? = null
@@ -180,35 +180,27 @@ class OpenFreeIME : InputMethodService() {
             }
         }
 
-        // Setup QWERTY keys recursively (Row 1-3 keys)
-        setupQwertyKeys(layoutQwerty as ViewGroup)
+        // Setup keyboard layouts recursively
+        setupKeyboardKeys(layoutQwerty as ViewGroup)
+        val layoutSymbols = view.findViewById<ViewGroup>(R.id.layout_symbols)
+        if (layoutSymbols != null) {
+            setupKeyboardKeys(layoutSymbols)
+        }
 
-        // Setup repeating backspace on long-press
-        val btnBackspace = view.findViewById<Button>(R.id.key_backspace)
-        var backspaceRunnable: Runnable? = null
-        btnBackspace?.setOnTouchListener { v, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    handleKeyClick("⌫")
-                    v.performClick()
-                    backspaceRunnable = object : Runnable {
-                        override fun run() {
-                            handleKeyClick("⌫")
-                            mainHandler.postDelayed(this, 100)
-                        }
-                    }
-                    mainHandler.postDelayed(backspaceRunnable!!, 400)
-                    true
-                }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (backspaceRunnable != null) {
-                        mainHandler.removeCallbacks(backspaceRunnable!!)
-                        backspaceRunnable = null
-                    }
-                    true
-                }
-                else -> false
-            }
+        // Setup repeating backspace on long-press for both layouts
+        setupBackspaceKey(view.findViewById<Button>(R.id.key_backspace))
+        setupBackspaceKey(view.findViewById<Button>(R.id.key_symbols_backspace))
+
+        // Setup special keys manually since they are excluded from recursive binding
+        val keyShift = view.findViewById<Button>(R.id.key_shift)
+        keyShift?.setOnClickListener { handleKeyClick("⇧") }
+
+        val keyEnter = view.findViewById<Button>(R.id.key_enter)
+        keyEnter?.setOnClickListener { handleKeyClick("⏎") }
+
+        val keyToggleSymbols = view.findViewById<Button>(R.id.key_toggle_symbols)
+        keyToggleSymbols?.setOnClickListener {
+            toggleKeyboardLayout()
         }
 
         // Setup Dictionary Add Panel actions
@@ -254,6 +246,16 @@ class OpenFreeIME : InputMethodService() {
         super.onStartInputView(info, restarting)
         reloadModel()
         txtPreview?.text = getString(R.string.preview_hint)
+        
+        // Reset keyboard layout state to QWERTY
+        isSymbolsLayout = false
+        val layoutQwerty = keyboardView?.findViewById<View>(R.id.layout_qwerty)
+        val layoutSymbols = keyboardView?.findViewById<View>(R.id.layout_symbols)
+        val keyToggleSymbols = keyboardView?.findViewById<Button>(R.id.key_toggle_symbols)
+        layoutQwerty?.visibility = View.VISIBLE
+        layoutSymbols?.visibility = View.GONE
+        keyToggleSymbols?.text = "?123"
+
         applyTheme()
         if (!isRecording) setIdleState()
     }
@@ -417,7 +419,14 @@ class OpenFreeIME : InputMethodService() {
             isTranscribing = false
             val trimmed = correctedText.trim()
             if (trimmed.isNotEmpty()) {
-                currentInputConnection?.commitText(trimmed, /* newCursorPosition= */ 1)
+                val focusedEdit = getFocusedInternalEditText()
+                if (focusedEdit != null) {
+                    val start = Math.max(focusedEdit.selectionStart, 0)
+                    val end = Math.max(focusedEdit.selectionEnd, 0)
+                    focusedEdit.text.replace(start, end, trimmed)
+                } else {
+                    currentInputConnection?.commitText(trimmed, /* newCursorPosition= */ 1)
+                }
                 txtPreview?.text = trimmed
                 performHaptic()
             } else {
@@ -429,19 +438,87 @@ class OpenFreeIME : InputMethodService() {
 
     // ── QWERTY key handling ────────────────────────────────────────────────────
 
-    private fun setupQwertyKeys(viewGroup: ViewGroup) {
+    private fun setupKeyboardKeys(viewGroup: ViewGroup) {
         for (i in 0 until viewGroup.childCount) {
             val child = viewGroup.getChildAt(i)
             if (child is ViewGroup) {
-                setupQwertyKeys(child)
+                setupKeyboardKeys(child)
             } else if (child is Button) {
-                // Ensure we skipenter or shift special action keys if needed, or bind them
-                if (child.id != R.id.key_backspace) {
+                val id = child.id
+                if (id != R.id.key_backspace && id != R.id.key_symbols_backspace &&
+                    id != R.id.key_shift && id != R.id.key_enter &&
+                    id != R.id.key_toggle_symbols) {
+                    
                     child.setOnClickListener {
                         handleKeyClick(child.text.toString())
                     }
+                    
+                    val altChar = child.tag?.toString()
+                    if (!altChar.isNullOrEmpty()) {
+                        child.setOnLongClickListener {
+                            it.performHapticFeedback(
+                                HapticFeedbackConstants.LONG_PRESS,
+                                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                            )
+                            val ic = currentInputConnection
+                            if (ic != null) {
+                                val focusedEdit = getFocusedInternalEditText()
+                                if (focusedEdit != null) {
+                                    handleInternalKeyClick(focusedEdit, altChar)
+                                } else {
+                                    ic.commitText(altChar, 1)
+                                }
+                            }
+                            true
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private fun setupBackspaceKey(btnBackspace: Button?) {
+        var backspaceRunnable: Runnable? = null
+        btnBackspace?.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    handleKeyClick("⌫")
+                    v.performClick()
+                    backspaceRunnable = object : Runnable {
+                        override fun run() {
+                            handleKeyClick("⌫")
+                            mainHandler.postDelayed(this, 100)
+                        }
+                    }
+                    mainHandler.postDelayed(backspaceRunnable!!, 400)
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (backspaceRunnable != null) {
+                        mainHandler.removeCallbacks(backspaceRunnable!!)
+                        backspaceRunnable = null
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun toggleKeyboardLayout() {
+        val layoutQwerty = keyboardView?.findViewById<View>(R.id.layout_qwerty)
+        val layoutSymbols = keyboardView?.findViewById<View>(R.id.layout_symbols)
+        val keyToggleSymbols = keyboardView?.findViewById<Button>(R.id.key_toggle_symbols)
+        
+        isSymbolsLayout = !isSymbolsLayout
+        if (isSymbolsLayout) {
+            layoutQwerty?.visibility = View.GONE
+            layoutSymbols?.visibility = View.VISIBLE
+            keyToggleSymbols?.text = "ABC"
+        } else {
+            layoutQwerty?.visibility = View.VISIBLE
+            layoutSymbols?.visibility = View.GONE
+            keyToggleSymbols?.text = "?123"
         }
     }
 
@@ -467,8 +544,22 @@ class OpenFreeIME : InputMethodService() {
                 ic.commitText(" ", 1)
             }
             "⏎" -> {
-                ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
-                ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
+                val editorInfo = currentInputEditorInfo
+                if (editorInfo != null) {
+                    val action = editorInfo.imeOptions and EditorInfo.IME_MASK_ACTION
+                    when (action) {
+                        EditorInfo.IME_ACTION_SEARCH -> ic.performEditorAction(EditorInfo.IME_ACTION_SEARCH)
+                        EditorInfo.IME_ACTION_GO -> ic.performEditorAction(EditorInfo.IME_ACTION_GO)
+                        EditorInfo.IME_ACTION_SEND -> ic.performEditorAction(EditorInfo.IME_ACTION_SEND)
+                        EditorInfo.IME_ACTION_NEXT -> ic.performEditorAction(EditorInfo.IME_ACTION_NEXT)
+                        EditorInfo.IME_ACTION_DONE -> ic.performEditorAction(EditorInfo.IME_ACTION_DONE)
+                        else -> {
+                            ic.commitText("\n", 1)
+                        }
+                    }
+                } else {
+                    ic.commitText("\n", 1)
+                }
             }
             "⇧" -> {
                 isShifted = !isShifted
@@ -545,33 +636,12 @@ class OpenFreeIME : InputMethodService() {
 
     // ── Dictionary Corrections ─────────────────────────────────────────────────
 
-    private fun getDictionaryMappings(): Map<String, String> {
-        val raw = prefs.getString(KEY_DICTIONARY_MAPPINGS, "") ?: ""
-        if (raw.isBlank()) return emptyMap()
-        return raw.split(";").mapNotNull {
-            val parts = it.split("->")
-            if (parts.size == 2) {
-                parts[0] to parts[1]
-            } else null
-        }.toMap()
-    }
-
     private fun addDictionaryItem(wrong: String, correct: String) {
-        val current = getDictionaryMappings().toMutableMap()
-        current[wrong.trim().lowercase()] = correct.trim()
-        val raw = current.map { "${it.key}->${it.value}" }.joinToString(";")
-        prefs.edit().putString(KEY_DICTIONARY_MAPPINGS, raw).apply()
+        DictionaryStore.addMapping(prefs, wrong, correct)
     }
 
-    private fun applyDictionary(text: String): String {
-        var result = text
-        val mappings = getDictionaryMappings()
-        for ((wrong, correct) in mappings) {
-            val regex = "(?i)\\b${Pattern.quote(wrong)}\\b".toRegex()
-            result = result.replace(regex, correct)
-        }
-        return result
-    }
+    private fun applyDictionary(text: String): String =
+        DictionaryStore.applyCorrections(prefs, text)
 
     // ── UI helpers ─────────────────────────────────────────────────────────────
 
@@ -1005,8 +1075,10 @@ class OpenFreeIME : InputMethodService() {
     }
 
     private fun setLetterKeysAlpha(alpha: Float) {
-        val layoutQwerty = keyboardView?.findViewById<ViewGroup>(R.id.layout_qwerty) ?: return
-        setViewGroupKeysAlpha(layoutQwerty, alpha)
+        val layoutQwerty = keyboardView?.findViewById<ViewGroup>(R.id.layout_qwerty)
+        if (layoutQwerty != null) setViewGroupKeysAlpha(layoutQwerty, alpha)
+        val layoutSymbols = keyboardView?.findViewById<ViewGroup>(R.id.layout_symbols)
+        if (layoutSymbols != null) setViewGroupKeysAlpha(layoutSymbols, alpha)
     }
 
     private fun setViewGroupKeysAlpha(viewGroup: ViewGroup, alpha: Float) {
@@ -1015,8 +1087,10 @@ class OpenFreeIME : InputMethodService() {
             if (child is ViewGroup) {
                 setViewGroupKeysAlpha(child, alpha)
             } else if (child is Button) {
-                val txt = child.text.toString()
-                if (txt.length == 1 && txt[0].isLetter()) {
+                val id = child.id
+                if (id != R.id.key_backspace && id != R.id.key_symbols_backspace &&
+                    id != R.id.key_shift && id != R.id.key_enter &&
+                    id != R.id.key_toggle_symbols) {
                     child.alpha = alpha
                 }
             }
@@ -1034,7 +1108,6 @@ class OpenFreeIME : InputMethodService() {
         private const val TAG        = "OpenFreeIME"
         const val PREFS_NAME         = "openfree_prefs"
         const val KEY_MODEL_PATH     = "pref_key_model_path"
-        const val KEY_REMOTE_FALLBACK_URL = "pref_key_remote_fallback_url"
         const val KEY_DICTIONARY_MAPPINGS = "pref_key_dictionary_mappings"
     }
 }

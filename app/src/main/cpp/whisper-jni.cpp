@@ -10,6 +10,8 @@
 
 #include <jni.h>
 #include <string>
+#include <algorithm>
+#include <thread>
 #include <android/log.h>
 #include "whisper.h"
 
@@ -105,9 +107,14 @@ Java_com_openfree_client_WhisperEngine_nativeTranscribe(
         return env->NewStringUTF("");
     }
 
-    // Configure greedy decoding params optimised for mobile dictation
+    // Configure greedy decoding params optimised for mobile dictation.
+    // Use roughly half the cores (clamped to [2, 6]) — big.LITTLE phones throttle
+    // and can even slow down when whisper saturates every core.
+    const int hw_threads = static_cast<int>(std::thread::hardware_concurrency());
+    const int n_threads  = std::min(6, std::max(2, hw_threads / 2));
+
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    params.n_threads         = 4;      // Good default for Pixel 10 Pro (12-core)
+    params.n_threads         = n_threads;
     params.language          = "en";
     params.translate         = false;
     params.no_context        = true;   // No cross-segment context for low latency
@@ -116,7 +123,7 @@ Java_com_openfree_client_WhisperEngine_nativeTranscribe(
     params.print_realtime    = false;
     params.print_progress    = false;
 
-    LOGI("nativeTranscribe: running inference on %d samples", n_samples);
+    LOGI("nativeTranscribe: running inference on %d samples with %d threads", n_samples, n_threads);
     int rc = whisper_full(ctx, params, samples, static_cast<int>(n_samples));
 
     env->ReleaseFloatArrayElements(audioSamples, samples, JNI_ABORT);

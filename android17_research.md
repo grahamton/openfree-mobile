@@ -21,17 +21,7 @@ The key architectural updates in Android 17 focus on **AI integration**, **perfo
 
 ### B. Local Network Access Permission (`android.permission.ACCESS_LOCAL_NETWORK`)
 *   **What it is:** A new runtime permission introduced in Android 17 for accessing devices on the local network.
-*   **Why it matters for OpenFree:** The keyboard utilizes a remote fallback server capability (`pref_key_remote_fallback_url`). When fallback requests hit a user's home lab or local development server, the app must request and check this permission dynamically on Android 17+ devices.
-*   **Current state in codebase:** Currently, `SettingsActivity.kt` checks for this permission dynamically:
-    ```kotlin
-    val localNetworkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
-    if (android.os.Build.VERSION.SDK_INT >= 37) {
-        if (ContextCompat.checkSelfPermission(this, localNetworkPermission) != PackageManager.PERMISSION_GRANTED) {
-            permissionsToRequest.add(localNetworkPermission)
-        }
-    }
-    ```
-    This is well-designed, but targeting `targetSdk = 37` enforces this constraint system-wide.
+*   **Status: no longer used.** The remote fallback feature was removed in M8 — OpenFree is strictly offline-only, so the app neither declares nor requests this permission. This section is retained for historical context only.
 
 ### C. Stricter Process Memory Limits
 *   **What it is:** Android 17 enforces tighter, RAM-dependent limits on app processes to maximize device efficiency and minimize background memory pressure.
@@ -83,7 +73,7 @@ graph TD
 5.  **Settings Panel (SettingsActivity.kt)**
     *   Hosts HF model download thread.
     *   Updates `SharedPreferences` keys.
-    *   Requests permissions dynamically (microphone, and access local network for API 37+).
+    *   Requests the microphone permission dynamically.
 
 ---
 

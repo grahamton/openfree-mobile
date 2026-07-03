@@ -73,9 +73,6 @@ class MockSharedPreferences:
     def get_model_path(self) -> str:
         default_path = os.path.join(self.cache_dir, "ggml-base.en-q5_1.bin")
         return self.getString("pref_key_model_path", default_path)
-        
-    def get_remote_fallback_url(self) -> str:
-        return self.getString("pref_key_remote_fallback_url", "")
 
 
 class MockDownloader:
@@ -288,40 +285,32 @@ class TestTier3CrossFeature(unittest.TestCase):
         self.assertTrue(loaded)
         self.assertTrue(self.dll.GetMockModelLoadedState())
 
-    def test_f2_f4_fallback_dictation_flow(self):
+    def test_f2_f4_no_model_produces_no_output(self):
         """
-        F2 <-> F4: AudioRecorder recording when local model is unavailable, triggering remote fallback request structure.
+        F2 <-> F4: With no local model loaded, captured audio yields no transcription
+        (remote fallback was removed in M8 — there is no secondary path).
         """
         # 1. local model is unavailable (not loaded / doesn't exist)
         local_model_loaded = self.dll.GetMockModelLoadedState()
         self.assertFalse(local_model_loaded)
-        
-        # 2. Setup fallback URL preference
-        fallback_url = "http://fallback-server.internal/api/transcribe"
-        self.prefs.putString("pref_key_remote_fallback_url", fallback_url)
-        
-        # 3. AudioRecorder starts and captures PCM, but local model load fails
-        fallback_triggered = False
+
+        # 2. AudioRecorder starts and captures PCM; transcription is skipped
+        transcription_attempted = False
         captured_samples = []
-        
+
         def on_audio_data(samples):
-            nonlocal fallback_triggered, captured_samples
+            nonlocal transcription_attempted, captured_samples
             captured_samples.extend(samples)
-            # Try to use local model first
-            local_loaded = self.dll.GetMockModelLoadedState()
-            if not local_loaded:
-                # Local model failed, check fallback
-                fallback_target = self.prefs.get_remote_fallback_url()
-                if fallback_target == fallback_url:
-                    fallback_triggered = True
-                    
+            if self.dll.GetMockModelLoadedState():
+                transcription_attempted = True
+
         self.recorder.start_recording(on_audio_data)
-        
-        # 4. Feed audio
+
+        # 3. Feed audio
         self.recorder.process_raw_pcm_bytes(struct.pack("<100h", *([500] * 100)))
-        
-        # 5. Verify fallback was triggered
-        self.assertTrue(fallback_triggered)
+
+        # 4. Audio was captured but no transcription path was taken
+        self.assertFalse(transcription_attempted)
         self.assertEqual(len(captured_samples), 100)
 
 

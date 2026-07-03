@@ -32,7 +32,6 @@ import java.net.URL
  *
  * Configuration UI for OpenFree. Allows users to:
  *  - Set the local path to a GGML Whisper model (or download one).
- *  - Configure an optional remote fallback transcription endpoint.
  *  - View and clear corrections dictionary mappings.
  *
  * Preferences are persisted in the "openfree_prefs" [SharedPreferences] file
@@ -43,7 +42,6 @@ class SettingsActivity : AppCompatActivity() {
     // ── Views ──────────────────────────────────────────────────────────────────
 
     private lateinit var editModelPath: EditText
-    private lateinit var editFallbackUrl: EditText
     private lateinit var btnDownload: Button
     private lateinit var btnSave: Button
     private lateinit var progressBar: ProgressBar
@@ -51,6 +49,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtDictionaryList: TextView
     private lateinit var btnClearDictionary: Button
     private lateinit var btnToggleFloating: Button
+    private lateinit var editDictWrongSettings: EditText
+    private lateinit var editDictCorrectSettings: EditText
+    private lateinit var btnDictAddSettings: Button
 
     private lateinit var circularProgressBar: com.google.android.material.progressindicator.CircularProgressIndicator
     private lateinit var switchFloating: com.google.android.material.switchmaterial.SwitchMaterial
@@ -78,9 +79,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         prefs = getSharedPreferences(OpenFreeIME.PREFS_NAME, MODE_PRIVATE)
+        migrateModelOutOfCache()
 
         editModelPath      = findViewById(R.id.edit_model_path)
-        editFallbackUrl    = findViewById(R.id.edit_fallback_url)
         btnDownload        = findViewById(R.id.btn_download_model)
         btnSave            = findViewById(R.id.btn_save)
         progressBar        = findViewById(R.id.progress_download)
@@ -89,12 +90,15 @@ class SettingsActivity : AppCompatActivity() {
         btnClearDictionary = findViewById(R.id.btn_clear_dictionary)
         btnToggleFloating  = findViewById(R.id.btn_toggle_floating_service)
 
+        editDictWrongSettings = findViewById(R.id.edit_dict_wrong_settings)
+        editDictCorrectSettings = findViewById(R.id.edit_dict_correct_settings)
+        btnDictAddSettings = findViewById(R.id.btn_dict_add_settings)
+
         circularProgressBar = findViewById(R.id.progress_download_circular)
         switchFloating      = findViewById(R.id.switch_floating_service)
 
         // Restore saved preferences
         editModelPath.setText(prefs.getString(OpenFreeIME.KEY_MODEL_PATH, ""))
-        editFallbackUrl.setText(prefs.getString(OpenFreeIME.KEY_REMOTE_FALLBACK_URL, ""))
 
         // Restore theme
         val savedTheme = prefs.getString("pref_key_theme", "classic") ?: "classic"
@@ -121,6 +125,19 @@ class SettingsActivity : AppCompatActivity() {
         btnSave.setOnClickListener { saveSettings() }
         btnDownload.setOnClickListener { downloadModel() }
         btnClearDictionary.setOnClickListener { clearDictionary() }
+        btnDictAddSettings.setOnClickListener {
+            val wrong = editDictWrongSettings.text.toString().trim()
+            val correct = editDictCorrectSettings.text.toString().trim()
+            if (wrong.isNotEmpty() && correct.isNotEmpty()) {
+                addDictionaryItem(wrong, correct)
+                editDictWrongSettings.setText("")
+                editDictCorrectSettings.setText("")
+                updateDictionaryDisplay()
+                Toast.makeText(this, "Correction added", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Please enter both words", Toast.LENGTH_SHORT).show()
+            }
+        }
         btnToggleFloating.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
@@ -142,6 +159,7 @@ class SettingsActivity : AppCompatActivity() {
         if (::switchFloating.isInitialized) {
             switchFloating.isChecked = isAccessibilityServiceEnabled()
         }
+        updateDictionaryDisplay()
     }
 
     private fun updateFloatingServiceButtonState() {
@@ -177,24 +195,10 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-        }
-
-        // ACCESS_LOCAL_NETWORK is a string literal to compile on older target SDKs, but runs on Android 17 (API 37)+
-        val localNetworkPermission = "android.permission.ACCESS_LOCAL_NETWORK"
-        if (android.os.Build.VERSION.SDK_INT >= 37) {
-            if (ContextCompat.checkSelfPermission(this, localNetworkPermission) != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(localNetworkPermission)
-            }
-        }
-
-        if (permissionsToRequest.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 this,
-                permissionsToRequest.toTypedArray(),
+                arrayOf(Manifest.permission.RECORD_AUDIO),
                 PERMISSIONS_REQUEST_CODE
             )
         }
@@ -208,8 +212,7 @@ class SettingsActivity : AppCompatActivity() {
     // ── Settings persistence ───────────────────────────────────────────────────
 
     private fun saveSettings() {
-        val modelPath   = editModelPath.text.toString().trim()
-        val fallbackUrl = editFallbackUrl.text.toString().trim()
+        val modelPath = editModelPath.text.toString().trim()
 
         val toggleTheme: com.google.android.material.button.MaterialButtonToggleGroup = findViewById(R.id.toggle_group_theme)
         val selectedTheme = when (toggleTheme.checkedButtonId) {
@@ -230,7 +233,7 @@ class SettingsActivity : AppCompatActivity() {
 
         prefs.edit().apply {
             putString(OpenFreeIME.KEY_MODEL_PATH, modelPath)
-            putString(OpenFreeIME.KEY_REMOTE_FALLBACK_URL, fallbackUrl)
+            remove("pref_key_remote_fallback_url") // clean up removed remote-fallback setting
             putString("pref_key_theme", selectedTheme)
             putString("pref_key_contrast", selectedContrast)
             putInt("pref_key_blur_radius", blurRadius)
@@ -241,31 +244,51 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun clearDictionary() {
-        prefs.edit().remove(OpenFreeIME.KEY_DICTIONARY_MAPPINGS).apply()
+        DictionaryStore.clear(prefs)
         updateDictionaryDisplay()
         Toast.makeText(this, "Corrections dictionary cleared", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateDictionaryDisplay() {
-        val raw = prefs.getString(OpenFreeIME.KEY_DICTIONARY_MAPPINGS, "") ?: ""
-        if (raw.isBlank()) {
+        val mappings = DictionaryStore.getMappings(prefs)
+        if (mappings.isEmpty()) {
             txtDictionaryList.text = "No active dictionary corrections."
             return
         }
-        val sb = java.lang.StringBuilder()
-        raw.split(";").forEach {
-            val parts = it.split("->")
-            if (parts.size == 2) {
-                sb.append("${parts[0]} → ${parts[1]}\n")
+        txtDictionaryList.text = mappings.entries.joinToString("\n") { "${it.key} → ${it.value}" }
+    }
+
+    // ── Model storage ──────────────────────────────────────────────────────────
+
+    /**
+     * Models were originally downloaded into [getCacheDir], which Android may
+     * purge under storage pressure — silently breaking dictation. Move any
+     * previously cached model into [getFilesDir] and repoint the preference.
+     */
+    private fun migrateModelOutOfCache() {
+        val cached = File(cacheDir, MODEL_FILENAME)
+        if (!cached.exists()) return
+
+        val target = File(filesDir, MODEL_FILENAME)
+        val moved = if (target.exists()) {
+            cached.delete() // a copy already lives in filesDir; drop the cache duplicate
+            true
+        } else {
+            cached.renameTo(target)
+        }
+
+        if (moved) {
+            val savedPath = prefs.getString(OpenFreeIME.KEY_MODEL_PATH, "") ?: ""
+            if (savedPath.isBlank() || savedPath == cached.absolutePath) {
+                prefs.edit().putString(OpenFreeIME.KEY_MODEL_PATH, target.absolutePath).apply()
             }
         }
-        txtDictionaryList.text = sb.toString().trim()
     }
 
     // ── Model downloader ───────────────────────────────────────────────────────
 
     private fun downloadModel() {
-        val outputFile = File(cacheDir, MODEL_FILENAME)
+        val outputFile = File(filesDir, MODEL_FILENAME)
 
         btnDownload.isEnabled = false
         progressBar.progress  = 0
@@ -336,6 +359,10 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }.also { it.start() }
+    }
+
+    private fun addDictionaryItem(wrong: String, correct: String) {
+        DictionaryStore.addMapping(prefs, wrong, correct)
     }
 
     // ── Constants ──────────────────────────────────────────────────────────────

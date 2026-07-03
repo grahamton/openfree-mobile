@@ -19,9 +19,6 @@ class MockSharedPreferences:
     def get_model_path(self) -> str:
         default_path = os.path.join(self.cache_dir, "ggml-base.en-q5_1.bin")
         return self.getString("pref_key_model_path", default_path)
-        
-    def get_remote_fallback_url(self) -> str:
-        return self.getString("pref_key_remote_fallback_url", "")
 
 
 class MockDownloader:
@@ -129,17 +126,11 @@ class TestSettingsAndDownloader(unittest.TestCase):
     def test_default_preferences(self):
         expected_default = os.path.join(self.cache_dir, "ggml-base.en-q5_1.bin")
         self.assertEqual(self.prefs.get_model_path(), expected_default)
-        self.assertEqual(self.prefs.get_remote_fallback_url(), "")
 
     def test_update_preferences(self):
         custom_path = os.path.join(self.cache_dir, "custom-model.bin")
-        custom_url = "http://10.0.0.5:8080/transcribe"
-        
         self.prefs.putString("pref_key_model_path", custom_path)
-        self.prefs.putString("pref_key_remote_fallback_url", custom_url)
-        
         self.assertEqual(self.prefs.get_model_path(), custom_path)
-        self.assertEqual(self.prefs.get_remote_fallback_url(), custom_url)
 
     def test_download_model_success(self):
         url = f"{self.base_url}/{self.model_filename}"
@@ -160,11 +151,6 @@ class TestSettingsAndDownloader(unittest.TestCase):
         success = self.downloader.download_model(url, dest_path)
         self.assertTrue(success)
         self.assertEqual(self.prefs.get_model_path(), dest_path)
-
-    def test_remote_fallback_url_usage(self):
-        test_url = "http://192.168.1.100:5000/api/whisper"
-        self.prefs.putString("pref_key_remote_fallback_url", test_url)
-        self.assertEqual(self.prefs.get_remote_fallback_url(), test_url)
 
     # --- Boundary & Corner Cases (Tier 2) ---
 
@@ -195,14 +181,6 @@ class TestSettingsAndDownloader(unittest.TestCase):
         # Downloader should fail and clean up empty file
         self.assertFalse(success)
         self.assertFalse(os.path.exists(dest_path))
-
-    def test_invalid_fallback_url_format(self):
-        invalid_url = "invalid-protocol://example.com"
-        self.prefs.putString("pref_key_remote_fallback_url", invalid_url)
-        url = self.prefs.get_remote_fallback_url()
-        # Ensure we can detect it is invalid protocol
-        is_valid = url.startswith("http://") or url.startswith("https://")
-        self.assertFalse(is_valid)
 
     def test_downloader_temp_file_cleanup(self):
         # Induce a download failure by pointing to a nonexistent file

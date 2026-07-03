@@ -73,9 +73,6 @@ class MockSharedPreferences:
     def get_model_path(self) -> str:
         default_path = os.path.join(self.cache_dir, "ggml-base.en-q5_1.bin")
         return self.getString("pref_key_model_path", default_path)
-        
-    def get_remote_fallback_url(self) -> str:
-        return self.getString("pref_key_remote_fallback_url", "")
 
 
 class MockDownloader:
@@ -214,71 +211,14 @@ class MockOpenFreeIME:
             else:
                 self.status_text = "Ready"
         else:
-            # Fallback Dictation flow
-            fallback_url = self.prefs.get_remote_fallback_url()
-            if fallback_url:
-                self.status_text = "Sending to fallback..."
-                try:
-                    # Package raw float audio data back to PCM bytes for post
-                    pcm_shorts = [int(s * 32768.0) for s in self.accumulated_audio]
-                    pcm_bytes = struct.pack(f"<{len(pcm_shorts)}h", *pcm_shorts)
-                    
-                    text = self.perform_remote_fallback(fallback_url, pcm_bytes)
-                    if text:
-                        if self.input_connection:
-                            self.input_connection.commitText(text, 1)
-                        self.status_text = "Done"
-                    else:
-                        self.status_text = "Fallback failed"
-                except Exception:
-                    self.status_text = "Fallback failed"
-            else:
-                self.status_text = "Ready"
-
-    def perform_remote_fallback(self, url, pcm_bytes):
-        boundary = "Boundary-1234567890"
-        headers = {
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-            'User-Agent': 'OpenFreeIME-Fallback'
-        }
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="audio"; filename="audio.pcm"\r\n'
-            f"Content-Type: application/octet-stream\r\n\r\n"
-        ).encode('utf-8')
-        body += pcm_bytes + f"\r\n--{boundary}--\r\n".encode('utf-8')
-        
-        req = urllib.request.Request(url, data=body, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=2.0) as response:
-            if response.status == 200:
-                res_data = response.read().decode('utf-8')
-                res_json = json.loads(res_data)
-                return res_json.get("text", "")
-        return ""
+            # No local model: transcription is skipped entirely
+            # (remote fallback was removed in M8 — dictation is offline-only)
+            self.status_text = "Ready"
 
 
 class WorkloadHTTPRequestHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
-
-    def do_POST(self):
-        if self.path == "/transcribe":
-            content_type = self.headers.get('Content-Type', '')
-            if 'multipart/form-data' in content_type:
-                content_length = int(self.headers.get('Content-Length', 0))
-                body = self.rfile.read(content_length)
-                if len(body) > 0:
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    response_json = json.dumps({"text": "transcription from remote server"})
-                    self.wfile.write(response_json.encode('utf-8'))
-                    return
-            self.send_response(400)
-            self.end_headers()
-        else:
-            self.send_response(404)
-            self.end_headers()
 
 
 class TestTier4Workloads(unittest.TestCase):
@@ -307,7 +247,7 @@ class TestTier4Workloads(unittest.TestCase):
         with open(os.path.join(cls.serve_dir, cls.model_filename), "wb") as f:
             f.write(b"mock-hf-model-content")
             
-        # Start Workload HTTP Server serving files and handling fallback POST
+        # Start Workload HTTP Server serving model files for download tests
         class CustomHandler(WorkloadHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=cls.serve_dir, **kwargs)
@@ -399,30 +339,28 @@ class TestTier4Workloads(unittest.TestCase):
         self.assertEqual(self.ime.status_text, "Done")
         self.assertEqual(self.ic.committed_text, "Hello world offline transcription")
 
-    def test_fallback_dictation_workload(self):
+    def test_no_model_dictation_workload(self):
         """
-        Fallback Dictation flow (No local model -> fallback to remote server -> multipart POST -> commit response)
+        No-model flow (Mic tap -> record -> stop): nothing is committed and the
+        keyboard returns to Ready. Remote fallback was removed in M8, so a
+        missing model must never trigger any network activity.
         """
         # 1. No local model is loaded
         self.assertFalse(self.dll.GetMockModelLoadedState())
-        
-        # 2. Configure fallback url
-        fallback_url = f"{self.base_url}/transcribe"
-        self.prefs.putString("pref_key_remote_fallback_url", fallback_url)
-        
-        # 3. Mic tap to record
+
+        # 2. Mic tap to record
         self.ime.handleMicTap(self.recorder)
         self.assertTrue(self.ime.btn_mic_active)
-        
-        # 4. Feed audio samples
+
+        # 3. Feed audio samples
         self.recorder.process_raw_pcm_bytes(struct.pack("<160h", *([200] * 160)))
-        
-        # 5. Mic tap to stop, triggers multipart HTTP POST fallback
+
+        # 4. Mic tap to stop — transcription is skipped without a model
         self.ime.handleMicTap(self.recorder)
-        
-        # 6. Verify fallback text is committed successfully
-        self.assertEqual(self.ime.status_text, "Done")
-        self.assertEqual(self.ic.committed_text, "transcription from remote server")
+
+        # 5. Verify no text was committed and state returned to Ready
+        self.assertEqual(self.ime.status_text, "Ready")
+        self.assertEqual(self.ic.committed_text, "")
 
     def test_settings_download_and_offline_dictation_workload(self):
         """

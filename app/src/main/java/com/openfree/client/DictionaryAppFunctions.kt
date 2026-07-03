@@ -21,21 +21,8 @@ class DictionaryAppFunctions {
         correct: String
     ): Boolean {
         val androidCtx = context.context
-        val prefs = androidCtx.getSharedPreferences("openfree_prefs", Context.MODE_PRIVATE)
-        val raw = prefs.getString("pref_key_dictionary_mappings", "") ?: ""
-        
-        val current = if (raw.isBlank()) {
-            mutableMapOf()
-        } else {
-            raw.split(";").mapNotNull {
-                val parts = it.split("->")
-                if (parts.size == 2) parts[0] to parts[1] else null
-            }.toMap().toMutableMap()
-        }
-        
-        current[wrong.trim().lowercase()] = correct.trim()
-        val updatedRaw = current.map { "${it.key}->${it.value}" }.joinToString(";")
-        return prefs.edit().putString("pref_key_dictionary_mappings", updatedRaw).commit()
+        val prefs = androidCtx.getSharedPreferences(OpenFreeIME.PREFS_NAME, Context.MODE_PRIVATE)
+        return DictionaryStore.addMapping(prefs, wrong, correct)
     }
 
     /**
@@ -49,12 +36,7 @@ class DictionaryAppFunctions {
         context: AppFunctionContext
     ): List<String> {
         val androidCtx = context.context
-        val prefs = androidCtx.getSharedPreferences("openfree_prefs", Context.MODE_PRIVATE)
-        val raw = prefs.getString("pref_key_dictionary_mappings", "") ?: ""
-        
-        if (raw.isBlank()) {
-            return emptyList()
-        }
-        return raw.split(";").filter { it.contains("->") }
+        val prefs = androidCtx.getSharedPreferences(OpenFreeIME.PREFS_NAME, Context.MODE_PRIVATE)
+        return DictionaryStore.getMappings(prefs).map { "${it.key}->${it.value}" }
     }
 }

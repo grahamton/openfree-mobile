@@ -11,9 +11,8 @@ OpenFree ("we", "our", or "us") respects your privacy and is committed to protec
 ### A. Microphone Audio Data
 * **Collection**: To provide voice-dictation functionality, the App requests permission to access your device's microphone (`android.permission.RECORD_AUDIO`).
 * **Processing**: 
-  - **Local Speech-to-Text (Default)**: By default, all audio captured is processed entirely **locally and in-process on your device** using the offline Whisper speech-to-text engine. Audio data is streamed as raw samples directly into the local engine memory and is discarded immediately after transcription finishes.
-  - **No Cloud Transmission**: We do **not** upload, stream, or transmit your voice recordings, audio samples, or text transcriptions to any external server or third party under default operation.
-  - **Remote Fallback (Optional / User-Configured)**: If you explicitly configure a custom remote fallback URL (e.g., your own self-hosted transcription API in your home lab), the App will send the audio data as a multipart HTTP request to **only the URL you specify**. We do not control or have access to any data sent to your custom fallback endpoints.
+  - **Local Speech-to-Text**: All audio captured is processed entirely **locally and in-process on your device** using the offline Whisper speech-to-text engine. Audio data is streamed as raw samples directly into the local engine memory and is discarded immediately after transcription finishes.
+  - **No Transmission**: We do **not** upload, stream, or transmit your voice recordings, audio samples, or text transcriptions to any external server or third party. The App contains no capability to send audio or transcriptions off the device.
 
 ### B. Corrections Dictionary Mappings
 * The App allows you to configure a local corrections dictionary to map common voice mistranscriptions to your desired words. This mapping database is stored locally inside your device's private SharedPreferences storage and never leaves your device.
@@ -26,7 +25,7 @@ OpenFree ("we", "our", or "us") respects your privacy and is committed to protec
 ## 2. Permissions Used
 The App requires the following permissions to function:
 1. **RECORD_AUDIO**: Required to record audio from the microphone for real-time transcription.
-2. **INTERNET**: Required to download the offline Whisper model files from Hugging Face during initial setup and to connect to your custom fallback endpoint (if configured).
+2. **INTERNET**: Required solely to download the offline Whisper model files from Hugging Face during initial setup. It is never used during dictation.
 
 ---
 

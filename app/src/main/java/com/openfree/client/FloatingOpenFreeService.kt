@@ -27,7 +27,6 @@ import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import java.util.regex.Pattern
 import android.os.PowerManager
 
 
@@ -678,22 +677,8 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         }
     }
 
-    private fun applyDictionary(text: String): String {
-        var result = text
-        val raw = prefs.getString(OpenFreeIME.KEY_DICTIONARY_MAPPINGS, "") ?: ""
-        if (raw.isBlank()) return result
-
-        val mappings = raw.split(";").mapNotNull {
-            val parts = it.split("->")
-            if (parts.size == 2) parts[0] to parts[1] else null
-        }.toMap()
-
-        for ((wrong, correct) in mappings) {
-            val regex = "(?i)\\b${Pattern.quote(wrong)}\\b".toRegex()
-            result = result.replace(regex, correct)
-        }
-        return result
-    }
+    private fun applyDictionary(text: String): String =
+        DictionaryStore.applyCorrections(prefs, text)
 
     // ── Frosted Blur ──────────────────────────────────────────────────────────
 

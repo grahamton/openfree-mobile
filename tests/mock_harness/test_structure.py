@@ -280,9 +280,9 @@ class TestF4SettingsAndDownloader(unittest.TestCase):
     def test_f4_layout_has_progress_bar(self):
         self.assertIn("progress_download", self._layout())
 
-    # Boundary
-    def test_f4_layout_has_fallback_url_field(self):
-        self.assertIn("edit_fallback_url", self._layout())
+    # Boundary — remote fallback was removed in M8; the field must stay gone
+    def test_f4_layout_has_no_fallback_url_field(self):
+        self.assertNotIn("edit_fallback_url", self._layout())
 
     def test_f4_uses_huggingface_url(self):
         self.assertIn("huggingface.co", self._kt())
@@ -295,11 +295,11 @@ class TestF4SettingsAndDownloader(unittest.TestCase):
             "SettingsActivity must reference the model path preference key"
         )
 
-    def test_f4_shared_prefs_key_fallback_url(self):
+    def test_f4_no_fallback_url_pref_key(self):
         kt = self._kt()
-        self.assertTrue(
-            "pref_key_remote_fallback_url" in kt or "KEY_REMOTE_FALLBACK_URL" in kt,
-            "SettingsActivity must reference the fallback URL preference key"
+        self.assertNotIn(
+            "KEY_REMOTE_FALLBACK_URL", kt,
+            "Remote fallback was removed in M8; SettingsActivity must not reference its constant"
         )
 
     def test_f4_settings_layout_uses_dark_background(self):
