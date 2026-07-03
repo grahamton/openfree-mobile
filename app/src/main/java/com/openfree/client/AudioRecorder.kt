@@ -48,6 +48,15 @@ class AudioRecorder {
      */
     var onAmplitudeUpdate: ((Float) -> Unit)? = null
 
+    /**
+     * Optional callback invoked on the recording thread with each live
+     * chunk of captured audio, already converted to normalised floats
+     * [-1.0, 1.0]. Used for streaming partial transcription and VAD;
+     * the full-session callback passed to [startRecording] still fires
+     * on stop as before.
+     */
+    var onChunk: ((FloatArray) -> Unit)? = null
+
     // ── Public API ─────────────────────────────────────────────────────────────
 
     /**
@@ -115,6 +124,12 @@ class AudioRecorder {
                     }
                     peakAmplitude = maxVal.toFloat() / Short.MAX_VALUE.toFloat()
                     onAmplitudeUpdate?.invoke(peakAmplitude)
+                    onChunk?.let { cb ->
+                        val floats = FloatArray(read) { i ->
+                            chunk[i].toFloat() / Short.MAX_VALUE.toFloat()
+                        }
+                        cb(floats)
+                    }
                 }
             }
 

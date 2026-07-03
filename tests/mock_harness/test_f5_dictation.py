@@ -275,5 +275,218 @@ class TestVoiceCommandProcessorStructure(unittest.TestCase):
             )
 
 
+# ===========================================================================
+# Python mirror of VoiceActivityDetector.kt
+# ===========================================================================
+
+FRAME_SIZE = 480          # 30 ms at 16 kHz
+FRAME_MS = 30
+DEFAULT_SPEECH_THRESHOLD = 0.015
+TRIM_PADDING_MS = 200
+SAMPLE_RATE = 16000
+PADDING_SAMPLES = SAMPLE_RATE * TRIM_PADDING_MS // 1000
+
+
+def frame_rms(samples, length, offset=0):
+    if length <= 0:
+        return 0.0
+    total = sum(s * s for s in samples[offset:offset + length])
+    return (total / length) ** 0.5
+
+
+class MirrorVad:
+    """Mirror of VoiceActivityDetector: frame RMS, silence timeout latch."""
+
+    def __init__(self, silence_timeout_ms, speech_threshold=DEFAULT_SPEECH_THRESHOLD):
+        self.silence_timeout_ms = silence_timeout_ms
+        self.speech_threshold = speech_threshold
+        self.reset()
+
+    def reset(self):
+        self.remainder = []
+        self.has_heard_speech = False
+        self.silence_ms = 0
+        self.fired = False
+
+    def process_chunk(self, chunk):
+        if self.silence_timeout_ms <= 0 or self.fired:
+            return False
+        self.remainder.extend(chunk)
+        while len(self.remainder) >= FRAME_SIZE:
+            frame = self.remainder[:FRAME_SIZE]
+            del self.remainder[:FRAME_SIZE]
+            if frame_rms(frame, FRAME_SIZE) >= self.speech_threshold:
+                self.has_heard_speech = True
+                self.silence_ms = 0
+            elif self.has_heard_speech:
+                self.silence_ms += FRAME_MS
+                if self.silence_ms >= self.silence_timeout_ms:
+                    self.fired = True
+                    return True
+        return False
+
+
+def trim_silence(samples, threshold=DEFAULT_SPEECH_THRESHOLD):
+    """Mirror of VoiceActivityDetector.trimSilence."""
+    if not samples:
+        return samples
+    first_speech = -1
+    last_speech = -1
+    frame = 0
+    offset = 0
+    while offset < len(samples):
+        length = min(FRAME_SIZE, len(samples) - offset)
+        if frame_rms(samples, length, offset) >= threshold:
+            if first_speech < 0:
+                first_speech = frame
+            last_speech = frame
+        frame += 1
+        offset += FRAME_SIZE
+    if first_speech < 0:
+        return []
+    start = max(0, first_speech * FRAME_SIZE - PADDING_SAMPLES)
+    end = min(len(samples), (last_speech + 1) * FRAME_SIZE + PADDING_SAMPLES)
+    return samples[start:end]
+
+
+def speech_frames(n):
+    """n frames of constant 0.1 amplitude (RMS 0.1 — well above threshold)."""
+    return [0.1] * (FRAME_SIZE * n)
+
+
+def silent_frames(n):
+    return [0.0] * (FRAME_SIZE * n)
+
+
+# ===========================================================================
+# VAD — auto-stop behaviour
+# ===========================================================================
+
+class TestVadAutoStop(unittest.TestCase):
+
+    def test_pure_silence_never_fires(self):
+        vad = MirrorVad(300)
+        self.assertFalse(vad.process_chunk(silent_frames(100)))
+
+    def test_fires_after_silence_timeout_following_speech(self):
+        vad = MirrorVad(300)  # 10 frames of 30 ms
+        self.assertFalse(vad.process_chunk(speech_frames(5)))
+        self.assertFalse(vad.process_chunk(silent_frames(9)))
+        self.assertTrue(vad.process_chunk(silent_frames(1)))
+
+    def test_speech_resets_silence_counter(self):
+        vad = MirrorVad(300)
+        vad.process_chunk(speech_frames(2))
+        self.assertFalse(vad.process_chunk(silent_frames(9)))
+        vad.process_chunk(speech_frames(1))  # counter resets
+        self.assertFalse(vad.process_chunk(silent_frames(9)))
+        self.assertTrue(vad.process_chunk(silent_frames(1)))
+
+    def test_fires_exactly_once(self):
+        vad = MirrorVad(300)
+        vad.process_chunk(speech_frames(1))
+        self.assertTrue(vad.process_chunk(silent_frames(10)))
+        self.assertFalse(vad.process_chunk(silent_frames(50)))
+
+    def test_disabled_when_timeout_zero(self):
+        vad = MirrorVad(0)
+        vad.process_chunk(speech_frames(1))
+        self.assertFalse(vad.process_chunk(silent_frames(1000)))
+
+    def test_chunks_smaller_than_frame_accumulate(self):
+        vad = MirrorVad(60)  # 2 frames
+        vad.process_chunk(speech_frames(1))
+        fired = False
+        # feed 3 frames of silence in 10-sample dribbles
+        silence = silent_frames(3)
+        for i in range(0, len(silence), 10):
+            if vad.process_chunk(silence[i:i + 10]):
+                fired = True
+        self.assertTrue(fired)
+
+    def test_reset_clears_state(self):
+        vad = MirrorVad(300)
+        vad.process_chunk(speech_frames(1))
+        vad.process_chunk(silent_frames(10))
+        vad.reset()
+        self.assertFalse(vad.process_chunk(silent_frames(100)))
+
+
+# ===========================================================================
+# VAD — silence trimming
+# ===========================================================================
+
+class TestVadTrimming(unittest.TestCase):
+
+    def test_empty_input(self):
+        self.assertEqual(trim_silence([]), [])
+
+    def test_all_silence_returns_empty(self):
+        self.assertEqual(trim_silence(silent_frames(20)), [])
+
+    def test_all_speech_unchanged(self):
+        samples = speech_frames(10)
+        self.assertEqual(trim_silence(samples), samples)
+
+    def test_leading_and_trailing_silence_trimmed_with_padding(self):
+        lead = silent_frames(50)    # 24000 samples
+        speech = speech_frames(10)  # 4800 samples
+        tail = silent_frames(50)
+        trimmed = trim_silence(lead + speech + tail)
+        # speech spans frames [50, 59] -> samples [24000, 28800) +/- padding
+        expected_len = len(speech) + 2 * PADDING_SAMPLES
+        self.assertEqual(len(trimmed), expected_len)
+        # padded regions are silence, core is intact
+        self.assertEqual(trimmed[PADDING_SAMPLES:PADDING_SAMPLES + len(speech)], speech)
+
+    def test_padding_clamped_at_boundaries(self):
+        # speech starts at sample 0 — no negative start index
+        samples = speech_frames(2) + silent_frames(50)
+        trimmed = trim_silence(samples)
+        self.assertEqual(len(trimmed), len(speech_frames(2)) + PADDING_SAMPLES)
+
+    def test_short_final_partial_frame_handled(self):
+        # length not a multiple of FRAME_SIZE must not crash
+        samples = silent_frames(2) + speech_frames(1) + [0.1] * 100
+        trimmed = trim_silence(samples)
+        self.assertGreater(len(trimmed), 0)
+
+
+# ===========================================================================
+# Structural checks — VAD + AudioRecorder streaming
+# ===========================================================================
+
+class TestVadStructure(unittest.TestCase):
+
+    def _kt(self):
+        return read(
+            repo("app/src/main/java/com/openfree/client/VoiceActivityDetector.kt")
+        )
+
+    def test_kotlin_file_exists(self):
+        self.assertTrue(
+            os.path.isfile(
+                repo("app/src/main/java/com/openfree/client/VoiceActivityDetector.kt")
+            )
+        )
+
+    def test_kotlin_constants_match_mirror(self):
+        kt = self._kt()
+        self.assertIn("FRAME_SIZE = 480", kt)
+        self.assertIn("FRAME_MS = 30", kt)
+        self.assertIn("DEFAULT_SPEECH_THRESHOLD = 0.015f", kt)
+        self.assertIn("TRIM_PADDING_MS = 200", kt)
+
+    def test_kotlin_has_api_surface(self):
+        kt = self._kt()
+        self.assertIn("fun processChunk", kt)
+        self.assertIn("fun trimSilence", kt)
+        self.assertIn("fun reset", kt)
+
+    def test_audio_recorder_has_live_chunk_callback(self):
+        kt = read(repo("app/src/main/java/com/openfree/client/AudioRecorder.kt"))
+        self.assertIn("onChunk", kt)
+
+
 if __name__ == "__main__":
     unittest.main()
