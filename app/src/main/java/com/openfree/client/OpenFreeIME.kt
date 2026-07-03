@@ -52,6 +52,7 @@ class OpenFreeIME : InputMethodService() {
 
     private var btnMic: ImageButton? = null
     private var btnSettings: ImageButton? = null
+    private var btnShift: Button? = null
     private var txtStatus: TextView? = null
     private var txtPreview: TextView? = null
     private var pulseRing: View? = null
@@ -94,6 +95,7 @@ class OpenFreeIME : InputMethodService() {
 
         btnMic      = view.findViewById(R.id.btn_mic)
         btnSettings = view.findViewById(R.id.btn_settings)
+        btnShift    = view.findViewById(R.id.key_shift)
         txtStatus   = view.findViewById(R.id.txt_status)
         txtPreview  = view.findViewById(R.id.txt_preview)
         pulseRing   = view.findViewById(R.id.mic_pulse_ring)
@@ -140,6 +142,9 @@ class OpenFreeIME : InputMethodService() {
 
         val btnTabDict = view.findViewById<ImageButton>(R.id.btn_tab_dict)
         val btnTabSwitch = view.findViewById<ImageButton>(R.id.btn_tab_switch)
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            btnTabSwitch?.visibility = View.GONE
+        }
 
         val btnClearPreview = view.findViewById<ImageButton>(R.id.btn_clear_preview)
 
@@ -197,8 +202,7 @@ class OpenFreeIME : InputMethodService() {
         setupBackspaceKey(view.findViewById<Button>(R.id.key_symbols_backspace))
 
         // Setup special keys manually since they are excluded from recursive binding
-        val keyShift = view.findViewById<Button>(R.id.key_shift)
-        keyShift?.setOnClickListener { handleKeyClick("⇧") }
+        btnShift?.setOnClickListener { handleKeyClick("⇧") }
 
         val keyEnter = view.findViewById<Button>(R.id.key_enter)
         keyEnter?.setOnClickListener { handleKeyClick("⏎") }
@@ -696,6 +700,73 @@ class OpenFreeIME : InputMethodService() {
     private fun toggleQwertyShift() {
         val layoutQwerty = keyboardView?.findViewById<ViewGroup>(R.id.layout_qwerty) ?: return
         updateKeyCase(layoutQwerty)
+
+        val btn = btnShift ?: return
+        val theme = prefs.getString("pref_key_theme", "classic") ?: "classic"
+        if (isShifted) {
+            btn.background = ContextCompat.getDrawable(this, R.drawable.key_bg)
+            btn.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.primary_container)
+            )
+            btn.setTextColor(ContextCompat.getColor(this, R.color.on_primary_container))
+        } else {
+            btn.backgroundTintList = null
+            val density = resources.displayMetrics.density
+            when (theme) {
+                "classic" -> {
+                    btn.background = ContextCompat.getDrawable(this, R.drawable.key_bg)
+                    btn.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+                    btn.elevation = 2 * density
+                }
+                "frosted" -> {
+                    val radius = 10 * density
+                    val makeNormalBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = radius
+                        setColor(android.graphics.Color.argb((255 * 0.08).toInt(), 255, 255, 255))
+                        setStroke((1 * density).toInt(), android.graphics.Color.argb((255 * 0.12).toInt(), 255, 255, 255))
+                    }
+                    val makePressedBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = radius
+                        setColor(android.graphics.Color.argb((255 * 0.18).toInt(), 255, 255, 255))
+                        setStroke((1 * density).toInt(), ContextCompat.getColor(this@OpenFreeIME, R.color.primary))
+                    }
+                    val states = android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_pressed), makePressedBg)
+                        addState(intArrayOf(), makeNormalBg)
+                    }
+                    btn.background = states
+                    btn.setTextColor(ContextCompat.getColorStateList(this, R.color.key_text_color_frosted))
+                    btn.elevation = 0f
+                }
+                "oled" -> {
+                    val radius = 7 * density
+                    val makeNormalBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = radius
+                        setColor(android.graphics.Color.parseColor("#121212"))
+                        setStroke((1 * density).toInt(), android.graphics.Color.parseColor("#2A2A2A"))
+                    }
+                    val makePressedBg = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = radius
+                        setColor(android.graphics.Color.parseColor("#EDEDED"))
+                    }
+                    val states = android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_pressed), makePressedBg)
+                        addState(intArrayOf(), makeNormalBg)
+                    }
+                    val textColors = android.content.res.ColorStateList(
+                        arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
+                        intArrayOf(android.graphics.Color.BLACK, android.graphics.Color.WHITE)
+                    )
+                    btn.background = states
+                    btn.setTextColor(textColors)
+                    btn.elevation = 0f
+                }
+            }
+        }
     }
 
     private fun updateKeyCase(viewGroup: ViewGroup) {
@@ -726,18 +797,21 @@ class OpenFreeIME : InputMethodService() {
     enum class MicState { IDLE, RECORDING, TRANSCRIBING }
 
     private fun setIdleState() {
+        txtStatus?.visibility = View.VISIBLE
         txtStatus?.text = "Tap spacebar or hold to dictate"
         applyMicStyle(MicState.IDLE)
         stopPulseAnimation()
     }
 
     private fun setRecordingState() {
+        txtStatus?.visibility = View.GONE
         txtStatus?.text = "Listening... Speak clearly"
         applyMicStyle(MicState.RECORDING)
         startPulseAnimation()
     }
 
     private fun setProcessingState() {
+        txtStatus?.visibility = View.GONE
         txtStatus?.text = "Processing speech..."
         applyMicStyle(MicState.TRANSCRIBING)
         stopPulseAnimation()
@@ -1017,6 +1091,7 @@ class OpenFreeIME : InputMethodService() {
             }
         }
         applyMicStyle(if (isRecording) MicState.RECORDING else if (isTranscribing) MicState.TRANSCRIBING else MicState.IDLE)
+        toggleQwertyShift()
     }
 
     private fun resetKeysStyle() {
