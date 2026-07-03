@@ -15,6 +15,17 @@
 
     <!-- Settings Activity -->
     <string name="settings_title">Settings</string>
+    <string name="onboarding_title">Getting Started</string>
+    <string name="onboarding_intro">Four quick steps and you can dictate in any app.</string>
+    <string name="onboarding_done">You\'re all set — start dictating in any app!</string>
+    <string name="onboarding_step_mic">Allow microphone access</string>
+    <string name="onboarding_step_model">Download the voice model</string>
+    <string name="onboarding_step_enable">Enable the keyboard</string>
+    <string name="onboarding_step_switch">Make OpenFree your keyboard</string>
+    <string name="onboarding_action_grant">Grant</string>
+    <string name="onboarding_action_download">Download</string>
+    <string name="onboarding_action_enable">Enable</string>
+    <string name="onboarding_action_switch">Switch</string>
     <string name="model_path_label">Local Model Path</string>
     <string name="model_path_hint">/data/data/…/files/ggml-base.en-q5_1.bin</string>
     <string name="download_model_button">Download Base EN Model (~60 MB)</string>

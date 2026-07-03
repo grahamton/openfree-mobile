@@ -11,6 +11,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
@@ -149,7 +150,24 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
+        // Getting Started checklist actions
+        findViewById<Button>(R.id.btn_step_mic).setOnClickListener {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                PERMISSIONS_REQUEST_CODE
+            )
+        }
+        findViewById<Button>(R.id.btn_step_model).setOnClickListener { downloadModel() }
+        findViewById<Button>(R.id.btn_step_enable).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+        }
+        findViewById<Button>(R.id.btn_step_switch).setOnClickListener {
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+        }
+
         updateDictionaryDisplay()
+        refreshOnboardingState()
         checkAndRequestPermissions()
     }
 
@@ -160,6 +178,62 @@ class SettingsActivity : AppCompatActivity() {
             switchFloating.isChecked = isAccessibilityServiceEnabled()
         }
         updateDictionaryDisplay()
+        refreshOnboardingState()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        refreshOnboardingState()
+    }
+
+    // ── Getting Started checklist ──────────────────────────────────────────────
+
+    /**
+     * Reflects real system state so the checklist survives process death,
+     * revoked permissions, or the user disabling the keyboard later.
+     */
+    private fun refreshOnboardingState() {
+        val micDone = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+        val modelPath = prefs.getString(OpenFreeIME.KEY_MODEL_PATH, "") ?: ""
+        val modelDone = (modelPath.isNotBlank() && File(modelPath).exists()) ||
+            File(filesDir, MODEL_FILENAME).exists()
+
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        val enableDone = imm.enabledInputMethodList.any { it.packageName == packageName }
+
+        val defaultIme = Settings.Secure.getString(
+            contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD
+        ) ?: ""
+        val switchDone = defaultIme.startsWith("$packageName/")
+
+        applyStepState(R.id.txt_step_mic_icon, R.id.btn_step_mic, 1, micDone)
+        applyStepState(R.id.txt_step_model_icon, R.id.btn_step_model, 2, modelDone)
+        applyStepState(R.id.txt_step_enable_icon, R.id.btn_step_enable, 3, enableDone)
+        applyStepState(R.id.txt_step_switch_icon, R.id.btn_step_switch, 4, switchDone)
+
+        val allDone = micDone && modelDone && enableDone && switchDone
+        findViewById<TextView>(R.id.txt_onboarding_subtitle).text =
+            getString(if (allDone) R.string.onboarding_done else R.string.onboarding_intro)
+    }
+
+    private fun applyStepState(iconId: Int, buttonId: Int, stepNumber: Int, done: Boolean) {
+        val icon = findViewById<TextView>(iconId)
+        val button = findViewById<Button>(buttonId)
+        if (done) {
+            icon.text = "✓"
+            icon.setTextColor(ContextCompat.getColor(this, R.color.secondary))
+            button.visibility = View.GONE
+        } else {
+            icon.text = stepNumber.toString()
+            icon.setTextColor(ContextCompat.getColor(this, R.color.primary))
+            button.visibility = View.VISIBLE
+        }
     }
 
     private fun updateFloatingServiceButtonState() {
@@ -288,6 +362,8 @@ class SettingsActivity : AppCompatActivity() {
     // ── Model downloader ───────────────────────────────────────────────────────
 
     private fun downloadModel() {
+        if (!btnDownload.isEnabled) return // download already in progress
+
         val outputFile = File(filesDir, MODEL_FILENAME)
 
         btnDownload.isEnabled = false
@@ -341,6 +417,7 @@ class SettingsActivity : AppCompatActivity() {
                     progressBar.visibility  = View.GONE
                     circularProgressBar.visibility = View.GONE
                     btnDownload.isEnabled   = true
+                    refreshOnboardingState()
                 }
 
             } catch (e: InterruptedException) {
