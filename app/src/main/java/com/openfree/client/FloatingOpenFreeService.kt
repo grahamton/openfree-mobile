@@ -46,6 +46,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
     private lateinit var floatingView: View
     private lateinit var audioRecorder: AudioRecorder
     private lateinit var whisperEngine: WhisperEngine
+    private lateinit var streamingTranscriber: StreamingTranscriber
     private lateinit var prefs: SharedPreferences
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -59,10 +60,17 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
 
     private var pillContainer: View? = null
     private var tvTimer: TextView? = null
+    private var tvPartial: TextView? = null
     private var waveformContainer: View? = null
     private var velocityTracker: VelocityTracker? = null
     private var lastDragX = 0
     private var recordingSeconds = 0
+
+    /** Whether the current recording session shows streaming partial text. */
+    private var showPartials = false
+
+    /** Text injected by the last dictation, so "delete that" can remove it. */
+    private var lastInjectedText: String? = null
 
 
     override fun onCreate() {
@@ -71,6 +79,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         prefs.registerOnSharedPreferenceChangeListener(this)
         audioRecorder = AudioRecorder()
         whisperEngine = WhisperEngine(applicationContext)
+        streamingTranscriber = StreamingTranscriber(whisperEngine)
         loadModel()
     }
 
@@ -90,6 +99,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         btnFloatingMic = floatingView.findViewById(R.id.btn_floating_mic)
         pillContainer = floatingView.findViewById(R.id.floating_pill_container)
         tvTimer = floatingView.findViewById(R.id.tv_timer)
+        tvPartial = floatingView.findViewById(R.id.tv_partial)
         waveformContainer = floatingView.findViewById(R.id.waveform_container)
 
         // Overlay layout parameters using specialized accessibility overlay type
@@ -402,7 +412,26 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         tvTimer?.text = "0:00"
         recordingSeconds = 0
 
+        val config = StreamingTranscriber.Config.fromPrefs(prefs)
+        showPartials = config.partialsEnabled
+        tvPartial?.text = ""
+
         morphPillWidth(true)
+
+        streamingTranscriber.startSession(config, object : StreamingTranscriber.Listener {
+            override fun onPartial(text: String) {
+                mainHandler.post {
+                    if (currentState == State.RECORDING) tvPartial?.text = text
+                }
+            }
+
+            override fun onSilenceTimeout() {
+                mainHandler.post {
+                    if (currentState == State.RECORDING) stopAndTranscribe()
+                }
+            }
+        })
+        audioRecorder.onChunk = { chunk -> streamingTranscriber.feedChunk(chunk) }
 
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
@@ -446,7 +475,10 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
     }
 
     private fun onSamplesReady(samples: FloatArray) {
+        audioRecorder.onChunk = null
+
         if (samples.isEmpty()) {
+            streamingTranscriber.cancelSession()
             mainHandler.post {
                 currentState = State.IDLE
                 applyMicStyle(State.IDLE)
@@ -456,21 +488,85 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
             return
         }
 
-        val text = whisperEngine.transcribe(samples)
+        // Trimmed, full-context final pass (also joins any in-flight partial pass).
+        val text = streamingTranscriber.finishSession(samples)
         val correctedText = applyDictionary(text)
+        val commandsEnabled = prefs.getBoolean(OpenFreeIME.KEY_VOICE_COMMANDS, true)
 
         mainHandler.post {
             currentState = State.IDLE
             applyMicStyle(State.IDLE)
             morphPillWidth(false)
             clearFrostedBlur()
-            val trimmed = correctedText.trim()
-            if (trimmed.isNotEmpty()) {
-                injectText(trimmed)
-                triggerHaptic(true)
-            } else {
-                triggerHaptic(false)
+
+            val ops: List<VoiceCommandProcessor.TextOp> = when {
+                commandsEnabled -> VoiceCommandProcessor.process(correctedText)
+                correctedText.isBlank() -> emptyList()
+                else -> listOf(VoiceCommandProcessor.TextOp.InsertText(correctedText.trim()))
             }
+
+            if (ops.isEmpty()) {
+                triggerHaptic(false)
+            } else {
+                executeTextOps(ops)
+                triggerHaptic(true)
+            }
+        }
+    }
+
+    /**
+     * Apply text ops from [VoiceCommandProcessor] via accessibility injection.
+     * "delete that" removal is best-effort: exact on API 33+ (input
+     * connection), otherwise falls back to rewriting the focused node's text.
+     */
+    private fun executeTextOps(ops: List<VoiceCommandProcessor.TextOp>) {
+        val inserted = StringBuilder()
+        for (op in ops) {
+            when (op) {
+                is VoiceCommandProcessor.TextOp.InsertText -> {
+                    injectText(op.text)
+                    inserted.append(op.text)
+                }
+                VoiceCommandProcessor.TextOp.DeleteLastCommit -> {
+                    deleteLastInjectedText()
+                    lastInjectedText = null
+                }
+            }
+        }
+        if (inserted.isNotEmpty()) {
+            lastInjectedText = inserted.toString()
+        }
+    }
+
+    private fun deleteLastInjectedText() {
+        val last = lastInjectedText ?: return
+
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                val conn = inputMethod?.currentInputConnection
+                if (conn != null) {
+                    conn.deleteSurroundingText(last.length, 0)
+                    Log.i(TAG, "Deleted last dictation (${last.length} chars) via input connection")
+                    return
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to delete via AccessibilityInputConnection", e)
+            }
+        }
+
+        val focusedNode = findFocusedInput() ?: return
+        val current = focusedNode.text?.toString() ?: return
+        if (current.endsWith(last)) {
+            val newText = current.dropLast(last.length)
+            val arguments = Bundle()
+            arguments.putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                newText
+            )
+            focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            Log.i(TAG, "Deleted last dictation via fallback ACTION_SET_TEXT")
+        } else {
+            Log.w(TAG, "Focused text no longer ends with last dictation — skipping delete")
         }
     }
 
@@ -490,15 +586,19 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
         val container = pillContainer ?: return
         val density = resources.displayMetrics.density
         val startWidth = container.width
-        val targetWidth = if (recording) (168 * density).toInt() else (56 * density).toInt()
-        
+        // Live preview needs room for the partial text (which replaces the waveform)
+        val recordingWidth = if (showPartials) 236 else 168
+        val targetWidth = if (recording) (recordingWidth * density).toInt() else (56 * density).toInt()
+
         if (startWidth == targetWidth) return
-        
+
         if (recording) {
             tvTimer?.visibility = View.VISIBLE
-            waveformContainer?.visibility = View.VISIBLE
+            tvPartial?.visibility = if (showPartials) View.VISIBLE else View.GONE
+            waveformContainer?.visibility = if (showPartials) View.GONE else View.VISIBLE
         } else {
             tvTimer?.visibility = View.GONE
+            tvPartial?.visibility = View.GONE
             waveformContainer?.visibility = View.GONE
         }
 
@@ -743,6 +843,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                 
                 // Timer Text Color
                 tvTimer?.setTextColor(android.graphics.Color.parseColor("#EDEDED"))
+                tvPartial?.setTextColor(android.graphics.Color.parseColor("#EDEDED"))
                 
                 // Waveform bars tint
                 val waveContainer = waveformContainer as? android.view.ViewGroup
@@ -777,6 +878,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                 btn.setImageResource(if (state == State.RECORDING) R.drawable.ic_stop else R.drawable.ic_mic)
                 
                 tvTimer?.setTextColor(android.graphics.Color.parseColor("#CAC4D0"))
+                tvPartial?.setTextColor(android.graphics.Color.parseColor("#CAC4D0"))
                 
                 val waveContainer = waveformContainer as? android.view.ViewGroup
                 if (waveContainer != null) {
@@ -803,6 +905,7 @@ class FloatingOpenFreeService : AccessibilityService(), SharedPreferences.OnShar
                 
                 val timerColorRes = if (state == State.RECORDING) R.color.on_secondary else R.color.on_primary
                 tvTimer?.setTextColor(ContextCompat.getColor(this, timerColorRes))
+                tvPartial?.setTextColor(ContextCompat.getColor(this, timerColorRes))
                 
                 val waveContainer = waveformContainer as? android.view.ViewGroup
                 if (waveContainer != null) {

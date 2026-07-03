@@ -45,6 +45,7 @@ class OpenFreeIME : InputMethodService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var audioRecorder: AudioRecorder
     private lateinit var whisperEngine: WhisperEngine
+    private lateinit var streamingTranscriber: StreamingTranscriber
     private lateinit var prefs: SharedPreferences
 
     // ── View references ────────────────────────────────────────────────────────
@@ -73,6 +74,9 @@ class OpenFreeIME : InputMethodService() {
     private var spacebarRunnable: Runnable? = null
     private var dotsAnimator: AnimatorSet? = null
 
+    /** Length of the last dictation commit, so "delete that" can remove it. */
+    private var lastCommitLength = 0
+
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     override fun onCreate() {
@@ -80,6 +84,7 @@ class OpenFreeIME : InputMethodService() {
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         audioRecorder = AudioRecorder()
         whisperEngine = WhisperEngine(applicationContext)
+        streamingTranscriber = StreamingTranscriber(whisperEngine)
     }
 
     override fun onCreateInputView(): View {
@@ -246,6 +251,7 @@ class OpenFreeIME : InputMethodService() {
         super.onStartInputView(info, restarting)
         reloadModel()
         txtPreview?.text = getString(R.string.preview_hint)
+        lastCommitLength = 0 // different editor — its text isn't ours to "delete that"
         
         // Reset keyboard layout state to QWERTY
         isSymbolsLayout = false
@@ -368,6 +374,22 @@ class OpenFreeIME : InputMethodService() {
             setLetterKeysAlpha(0.55f)
         }
 
+        val config = StreamingTranscriber.Config.fromPrefs(prefs)
+        streamingTranscriber.startSession(config, object : StreamingTranscriber.Listener {
+            override fun onPartial(text: String) {
+                mainHandler.post {
+                    if (isRecording) txtPreview?.text = text
+                }
+            }
+
+            override fun onSilenceTimeout() {
+                mainHandler.post {
+                    if (isRecording) stopAndTranscribe()
+                }
+            }
+        })
+        audioRecorder.onChunk = { chunk -> streamingTranscriber.feedChunk(chunk) }
+
         audioRecorder.startRecording { samples ->
             onSamplesReady(samples)
         }
@@ -393,8 +415,11 @@ class OpenFreeIME : InputMethodService() {
     }
 
     private fun onSamplesReady(samples: FloatArray) {
+        audioRecorder.onChunk = null
+
         if (discardNextTranscription) {
             discardNextTranscription = false
+            streamingTranscriber.cancelSession()
             mainHandler.post {
                 isTranscribing = false
                 txtPreview?.text = ""
@@ -404,6 +429,7 @@ class OpenFreeIME : InputMethodService() {
         }
 
         if (samples.isEmpty()) {
+            streamingTranscriber.cancelSession()
             mainHandler.post {
                 isTranscribing = false
                 txtPreview?.text = "No audio captured"
@@ -412,28 +438,79 @@ class OpenFreeIME : InputMethodService() {
             return
         }
 
-        val text = whisperEngine.transcribe(samples)
+        // Trimmed, full-context final pass (also joins any in-flight partial pass).
+        val text = streamingTranscriber.finishSession(samples)
         val correctedText = applyDictionary(text)
+        val commandsEnabled = prefs.getBoolean(KEY_VOICE_COMMANDS, true)
 
         mainHandler.post {
             isTranscribing = false
-            val trimmed = correctedText.trim()
-            if (trimmed.isNotEmpty()) {
-                val focusedEdit = getFocusedInternalEditText()
-                if (focusedEdit != null) {
-                    val start = Math.max(focusedEdit.selectionStart, 0)
-                    val end = Math.max(focusedEdit.selectionEnd, 0)
-                    focusedEdit.text.replace(start, end, trimmed)
-                } else {
-                    currentInputConnection?.commitText(trimmed, /* newCursorPosition= */ 1)
-                }
-                txtPreview?.text = trimmed
-                performHaptic()
-            } else {
-                txtPreview?.text = "No speech detected"
-            }
+            commitDictation(correctedText, commandsEnabled)
             setIdleState()
         }
+    }
+
+    /**
+     * Commit the final dictation, interpreting spoken editing commands as
+     * [VoiceCommandProcessor.TextOp]s when enabled.
+     */
+    private fun commitDictation(correctedText: String, commandsEnabled: Boolean) {
+        val ops: List<VoiceCommandProcessor.TextOp> = when {
+            commandsEnabled -> VoiceCommandProcessor.process(correctedText)
+            correctedText.isBlank() -> emptyList()
+            else -> listOf(VoiceCommandProcessor.TextOp.InsertText(correctedText.trim()))
+        }
+
+        if (ops.isEmpty()) {
+            txtPreview?.text = "No speech detected"
+            return
+        }
+
+        val insertedText = executeTextOps(ops)
+        txtPreview?.text = if (insertedText.isNotEmpty()) insertedText else "✓"
+        performHaptic()
+    }
+
+    /**
+     * Apply text ops to the focused target (internal dictionary field or the
+     * client editor). Returns the concatenated inserted text.
+     */
+    private fun executeTextOps(ops: List<VoiceCommandProcessor.TextOp>): String {
+        val focusedEdit = getFocusedInternalEditText()
+        val inserted = StringBuilder()
+
+        for (op in ops) {
+            when (op) {
+                is VoiceCommandProcessor.TextOp.InsertText -> {
+                    if (focusedEdit != null) {
+                        val start = Math.max(focusedEdit.selectionStart, 0)
+                        val end = Math.max(focusedEdit.selectionEnd, 0)
+                        focusedEdit.text.replace(start, end, op.text)
+                    } else {
+                        currentInputConnection?.commitText(op.text, /* newCursorPosition= */ 1)
+                    }
+                    inserted.append(op.text)
+                }
+                VoiceCommandProcessor.TextOp.DeleteLastCommit -> {
+                    if (lastCommitLength > 0) {
+                        if (focusedEdit != null) {
+                            val start = Math.max(focusedEdit.selectionStart, 0)
+                            focusedEdit.text.delete(
+                                Math.max(0, start - lastCommitLength), start
+                            )
+                        } else {
+                            currentInputConnection?.deleteSurroundingText(lastCommitLength, 0)
+                        }
+                        lastCommitLength = 0
+                    }
+                }
+            }
+        }
+
+        if (inserted.isNotEmpty()) {
+            lastCommitLength = inserted.length
+        }
+        return inserted.toString()
     }
 
     // ── QWERTY key handling ────────────────────────────────────────────────────
@@ -529,6 +606,7 @@ class OpenFreeIME : InputMethodService() {
     }
 
     private fun handleKeyClick(key: String) {
+        lastCommitLength = 0 // manual edit — "delete that" no longer maps to the last dictation
         val focusedEdit = getFocusedInternalEditText()
         if (focusedEdit != null) {
             handleInternalKeyClick(focusedEdit, key)
@@ -1109,5 +1187,10 @@ class OpenFreeIME : InputMethodService() {
         const val PREFS_NAME         = "openfree_prefs"
         const val KEY_MODEL_PATH     = "pref_key_model_path"
         const val KEY_DICTIONARY_MAPPINGS = "pref_key_dictionary_mappings"
+
+        // M9 dictation-quality preferences (shared with FloatingOpenFreeService)
+        const val KEY_LIVE_PREVIEW           = "pref_key_live_preview"
+        const val KEY_VAD_AUTO_STOP_SECONDS  = "pref_key_vad_auto_stop_seconds"
+        const val KEY_VOICE_COMMANDS         = "pref_key_voice_commands"
     }
 }

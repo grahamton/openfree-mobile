@@ -488,5 +488,97 @@ class TestVadStructure(unittest.TestCase):
         self.assertIn("onChunk", kt)
 
 
+# ===========================================================================
+# Structural checks — StreamingTranscriber + surface wiring
+# ===========================================================================
+
+class TestStreamingTranscriberStructure(unittest.TestCase):
+
+    def _kt(self):
+        return read(
+            repo("app/src/main/java/com/openfree/client/StreamingTranscriber.kt")
+        )
+
+    def test_kotlin_file_exists(self):
+        self.assertTrue(
+            os.path.isfile(
+                repo("app/src/main/java/com/openfree/client/StreamingTranscriber.kt")
+            )
+        )
+
+    def test_session_api_surface(self):
+        kt = self._kt()
+        for token in ("fun startSession", "fun feedChunk", "fun finishSession",
+                      "fun cancelSession", "fun onPartial", "fun onSilenceTimeout"):
+            self.assertIn(token, kt)
+
+    def test_final_pass_trims_silence(self):
+        self.assertIn("trimSilence", self._kt())
+
+    def test_config_reads_shared_pref_keys(self):
+        kt = self._kt()
+        self.assertIn("KEY_LIVE_PREVIEW", kt)
+        self.assertIn("KEY_VAD_AUTO_STOP_SECONDS", kt)
+        self.assertIn("KEY_VOICE_COMMANDS", kt)
+
+    def test_pref_keys_defined_in_ime(self):
+        kt = read(repo("app/src/main/java/com/openfree/client/OpenFreeIME.kt"))
+        self.assertIn('"pref_key_live_preview"', kt)
+        self.assertIn('"pref_key_vad_auto_stop_seconds"', kt)
+        self.assertIn('"pref_key_voice_commands"', kt)
+
+    def test_whisper_engine_serialises_native_access(self):
+        kt = read(repo("app/src/main/java/com/openfree/client/WhisperEngine.kt"))
+        annotations = re.findall(r"^\s*@Synchronized\s*$", kt, re.MULTILINE)
+        self.assertEqual(
+            len(annotations), 3,
+            "loadModel/transcribe/unloadModel must all be @Synchronized"
+        )
+
+
+class TestSurfaceWiring(unittest.TestCase):
+
+    def _ime(self):
+        return read(repo("app/src/main/java/com/openfree/client/OpenFreeIME.kt"))
+
+    def _floating(self):
+        return read(
+            repo("app/src/main/java/com/openfree/client/FloatingOpenFreeService.kt")
+        )
+
+    def test_ime_uses_streaming_session(self):
+        kt = self._ime()
+        for token in ("streamingTranscriber.startSession", "feedChunk",
+                      "streamingTranscriber.finishSession",
+                      "streamingTranscriber.cancelSession"):
+            self.assertIn(token, kt)
+
+    def test_floating_uses_streaming_session(self):
+        kt = self._floating()
+        for token in ("streamingTranscriber.startSession", "feedChunk",
+                      "streamingTranscriber.finishSession",
+                      "streamingTranscriber.cancelSession"):
+            self.assertIn(token, kt)
+
+    def test_both_surfaces_execute_voice_command_ops(self):
+        self.assertIn("VoiceCommandProcessor.process", self._ime())
+        self.assertIn("VoiceCommandProcessor.process", self._floating())
+        self.assertIn("DeleteLastCommit", self._ime())
+        self.assertIn("DeleteLastCommit", self._floating())
+
+    def test_ime_shows_partials_in_preview(self):
+        kt = self._ime()
+        self.assertIn("onPartial", kt)
+        self.assertIn("txtPreview?.text = text", kt)
+
+    def test_floating_layout_has_partial_text_view(self):
+        layout = read(repo("app/src/main/res/layout/floating_layout.xml"))
+        self.assertIn("tv_partial", layout)
+
+    def test_both_surfaces_wire_vad_auto_stop(self):
+        self.assertIn("onSilenceTimeout", self._ime())
+        self.assertIn("onSilenceTimeout", self._floating())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,8 +10,9 @@ import android.util.Log
  * Manages the lifetime of a whisper_context (via a Long pointer) and
  * exposes a clean API for loading a model and transcribing audio.
  *
- * Thread safety: [loadModel] and [unloadModel] must not be called concurrently
- * with [transcribe]. The caller is responsible for serialising access.
+ * Thread safety: [loadModel], [transcribe], and [unloadModel] are
+ * @Synchronized so the native context can never be freed mid-inference
+ * (e.g. keyboard dismissed while a streaming partial pass is running).
  */
 class WhisperEngine(private val context: Context) {
 
@@ -27,6 +28,7 @@ class WhisperEngine(private val context: Context) {
      *
      * @return true if the model loaded successfully, false otherwise.
      */
+    @Synchronized
     fun loadModel(modelPath: String): Boolean {
         unloadModel()
         Log.i(TAG, "loadModel: $modelPath")
@@ -44,6 +46,7 @@ class WhisperEngine(private val context: Context) {
      *
      * @return The transcribed text, or an empty string on failure.
      */
+    @Synchronized
     fun transcribe(audioSamples: FloatArray): String {
         if (!isModelLoaded) {
             Log.w(TAG, "transcribe: no model loaded — returning empty string")
@@ -60,6 +63,7 @@ class WhisperEngine(private val context: Context) {
      * Release the native whisper context and free associated memory.
      * Safe to call even if no model is currently loaded.
      */
+    @Synchronized
     fun unloadModel() {
         if (contextPtr != 0L) {
             nativeUnloadModel(contextPtr)
