@@ -40,8 +40,8 @@ android {
         applicationId = "com.openfree.client"
         minSdk = 29 // Android 10 (Q) - required for modern features and NDK support
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         

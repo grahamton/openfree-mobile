@@ -36,7 +36,7 @@
     <string name="settings_saved">Settings saved</string>
     <string name="section_model">Voice Model</string>
     <string name="section_about">About</string>
-    <string name="about_version">OpenFree v1.0 — Offline Voice Dictation</string>
+    <string name="about_version">OpenFree v1.2.0 — Offline Voice Dictation</string>
 
     <!-- Floating Assist Service -->
     <string name="floating_service_name">OpenFree Floating Assist</string>

@@ -580,5 +580,38 @@ class TestSurfaceWiring(unittest.TestCase):
         self.assertIn("onSilenceTimeout", self._floating())
 
 
+# ===========================================================================
+# Structural checks — Dictation settings UI
+# ===========================================================================
+
+class TestDictationSettings(unittest.TestCase):
+
+    def _kt(self):
+        return read(repo("app/src/main/java/com/openfree/client/SettingsActivity.kt"))
+
+    def _layout(self):
+        return read(repo("app/src/main/res/layout/activity_settings.xml"))
+
+    def test_layout_has_dictation_controls(self):
+        layout = self._layout()
+        self.assertIn("switch_live_preview", layout)
+        self.assertIn("switch_voice_commands", layout)
+        self.assertIn("toggle_group_vad", layout)
+        for btn in ("btn_vad_off", "btn_vad_1s", "btn_vad_2s", "btn_vad_3s"):
+            self.assertIn(btn, layout)
+
+    def test_settings_restores_dictation_prefs(self):
+        kt = self._kt()
+        self.assertIn("KEY_LIVE_PREVIEW", kt)
+        self.assertIn("KEY_VOICE_COMMANDS", kt)
+        self.assertIn("KEY_VAD_AUTO_STOP_SECONDS", kt)
+
+    def test_settings_persists_dictation_prefs(self):
+        kt = self._kt()
+        self.assertIn("putBoolean(OpenFreeIME.KEY_LIVE_PREVIEW", kt)
+        self.assertIn("putBoolean(OpenFreeIME.KEY_VOICE_COMMANDS", kt)
+        self.assertIn("putInt(OpenFreeIME.KEY_VAD_AUTO_STOP_SECONDS", kt)
+
+
 if __name__ == "__main__":
     unittest.main()

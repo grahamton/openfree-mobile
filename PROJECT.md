@@ -22,6 +22,9 @@ Data flow:
 - `app/src/main/java/com/openfree/client/WhisperEngine.kt` - Kotlin JNI wrapper
 - `app/src/main/java/com/openfree/client/AudioRecorder.kt` - PCM recording wrapper
 - `app/src/main/java/com/openfree/client/DictionaryStore.kt` - Shared JSON-backed corrections dictionary (single source of truth)
+- `app/src/main/java/com/openfree/client/VoiceCommandProcessor.kt` - Shared spoken-command parser (punctuation words, "new line", "delete that") producing TextOps
+- `app/src/main/java/com/openfree/client/VoiceActivityDetector.kt` - Shared energy VAD: silence-timeout auto-stop + leading/trailing silence trim
+- `app/src/main/java/com/openfree/client/StreamingTranscriber.kt` - Shared dictation-session orchestrator: live partial passes + trimmed final full-context pass
 - `app/src/main/java/com/openfree/client/SettingsActivity.kt` - Settings activity and HF downloader
 - `app/src/main/res/xml/method.xml` - Input Method description metadata
 - `app/src/main/res/xml/floating_service_config.xml` - Accessibility service metadata
@@ -41,7 +44,7 @@ Data flow:
 | M6 | E2E Verification & Hardening | Final integrations, passing all test suite tiers (1-4) and adversarial testing (Tier 5) | M2, M3, M4, M5, TEST_READY.md | DONE |
 | M7 | Floating Assist Overlay | FloatingOpenFreeService implementation (drag gestures, TYPE_ACCESSIBILITY_OVERLAY, node injection) | M2, M3, M5 | DONE |
 | M8 | Offline-Only Hardening | Remove remote fallback + ACCESS_LOCAL_NETWORK, shared JSON DictionaryStore, model storage moved to filesDir, adaptive native thread count | M4, M5, M7 | DONE |
-| M9 | Dictation Quality & Live Feedback | Streaming partial transcription, VAD auto-stop, voice editing commands | M8 | PLANNED |
+| M9 | Dictation Quality & Live Feedback | Streaming partial transcription, VAD auto-stop, voice editing commands | M8 | DONE |
 | M10 | Verification & Play Store Launch | Instrumented test suite, CI, release signing/AAB, store listing submission | M8, M9 | PLANNED |
 
 ### E2E Testing Track
@@ -66,3 +69,16 @@ Data flow:
 - Uses Android SharedPreferences:
   - `pref_key_model_path`: String (default: path to ggml-base.en-q5_1.bin in app files dir)
   - `pref_key_dictionary_mappings`: String (JSON object of corrections, managed via DictionaryStore)
+  - `pref_key_live_preview`: Boolean (default true) — streaming partial transcription
+  - `pref_key_vad_auto_stop_seconds`: Int (default 2, 0 = off) — VAD silence auto-stop
+  - `pref_key_voice_commands`: Boolean (default true) — spoken editing commands
+
+### StreamingTranscriber ↔ OpenFreeIME / FloatingOpenFreeService (M9)
+- `startSession(config: Config, listener: Listener)` — begins a dictation session; `Config.fromPrefs(prefs)` reads the keys above
+- `feedChunk(chunk: FloatArray)` — live audio from `AudioRecorder.onChunk`; drives VAD (`Listener.onSilenceTimeout`) and partial passes (`Listener.onPartial`)
+- `finishSession(fullSamples: FloatArray): String` — trims silence, runs the final full-context pass (call on a background thread)
+- `cancelSession()` — abandon without a final pass
+
+### VoiceCommandProcessor ↔ dictation surfaces (M9)
+- `process(text: String): List<TextOp>` — applied after the DictionaryStore pass; surfaces execute `InsertText`/`DeleteLastCommit` ops
+- Command set is a registry inside the object — new phrases are one-line additions mirrored in `tests/mock_harness/test_f5_dictation.py`

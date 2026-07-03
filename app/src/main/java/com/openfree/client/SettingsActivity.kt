@@ -123,6 +123,20 @@ class SettingsActivity : AppCompatActivity() {
         val savedBlur = prefs.getInt("pref_key_blur_radius", 20)
         findViewById<com.google.android.material.slider.Slider>(R.id.slider_blur_radius).value = savedBlur.toFloat()
 
+        // Restore dictation settings (M9)
+        findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switch_live_preview)
+            .isChecked = prefs.getBoolean(OpenFreeIME.KEY_LIVE_PREVIEW, true)
+        findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switch_voice_commands)
+            .isChecked = prefs.getBoolean(OpenFreeIME.KEY_VOICE_COMMANDS, true)
+        val savedVadSeconds = prefs.getInt(OpenFreeIME.KEY_VAD_AUTO_STOP_SECONDS, 2)
+        val vadButtonId = when (savedVadSeconds) {
+            0 -> R.id.btn_vad_off
+            1 -> R.id.btn_vad_1s
+            3 -> R.id.btn_vad_3s
+            else -> R.id.btn_vad_2s
+        }
+        findViewById<com.google.android.material.button.MaterialButtonToggleGroup>(R.id.toggle_group_vad).check(vadButtonId)
+
         btnSave.setOnClickListener { saveSettings() }
         btnDownload.setOnClickListener { downloadModel() }
         btnClearDictionary.setOnClickListener { clearDictionary() }
@@ -305,12 +319,25 @@ class SettingsActivity : AppCompatActivity() {
         val sliderBlur: com.google.android.material.slider.Slider = findViewById(R.id.slider_blur_radius)
         val blurRadius = sliderBlur.value.toInt()
 
+        val livePreview = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switch_live_preview).isChecked
+        val voiceCommands = findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.switch_voice_commands).isChecked
+        val toggleVad: com.google.android.material.button.MaterialButtonToggleGroup = findViewById(R.id.toggle_group_vad)
+        val vadSeconds = when (toggleVad.checkedButtonId) {
+            R.id.btn_vad_off -> 0
+            R.id.btn_vad_1s -> 1
+            R.id.btn_vad_3s -> 3
+            else -> 2
+        }
+
         prefs.edit().apply {
             putString(OpenFreeIME.KEY_MODEL_PATH, modelPath)
             remove("pref_key_remote_fallback_url") // clean up removed remote-fallback setting
             putString("pref_key_theme", selectedTheme)
             putString("pref_key_contrast", selectedContrast)
             putInt("pref_key_blur_radius", blurRadius)
+            putBoolean(OpenFreeIME.KEY_LIVE_PREVIEW, livePreview)
+            putBoolean(OpenFreeIME.KEY_VOICE_COMMANDS, voiceCommands)
+            putInt(OpenFreeIME.KEY_VAD_AUTO_STOP_SECONDS, vadSeconds)
             apply()
         }
 
